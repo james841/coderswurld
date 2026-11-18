@@ -1,26 +1,915 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ═══════════════════════════════════════════════════════════════════════════
+   CODERSWURLD INVENTORY — design tokens
+
+   Palette rule: red, orange, blue, white — each with ONE job, so colour
+   always means the same thing wherever it appears:
+
+     BLUE    structure. The navigation, links, the focus ring, "you are here".
+     ORANGE  action. The one button on a screen that does the thing.
+     RED     selling. Only the till — the single most important door in the
+             product gets a colour nothing else is allowed to use.
+     WHITE   every surface. Content sits on white; the page behind is a
+             barely-blue grey so cards lift without heavy shadows.
+
+   Multi-colour beyond that only where it carries meaning (stock state, profit
+   vs loss). NO GRADIENTS ANYWHERE — solid fills and one-pixel borders only.
+
+   The action orange is #C2410C. It is the strongest orange that still clears
+   WCAG AA (5.18:1) against white text, so button labels stay legible at 15px.
+   The brighter #F97316 is an accent for numerals, icons and charts — it is
+   never used as a background behind white text. Blue #1D4ED8 (6.7:1) and red
+   #DC2626 (4.83:1) clear AA with white text the same way.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* ── Ink (black scale) ─────────────────────────────────────────────────── */
+  --color-ink-50: #f6f6f6;
+  --color-ink-100: #e9e9e9;
+  --color-ink-200: #d6d6d6;
+  --color-ink-300: #b4b4b4;
+  --color-ink-400: #888888;
+  --color-ink-500: #6a6a6a;
+  --color-ink-600: #4a4a4a;
+  --color-ink-700: #333333;
+  --color-ink-800: #1f1f1f;
+  --color-ink-900: #141414;
+  --color-ink-950: #0a0a0a;
+
+  /* ── Brand (orange scale) ──────────────────────────────────────────────── */
+  --color-brand-50: #fff4ed;
+  --color-brand-100: #ffe6d4;
+  --color-brand-200: #fecdaa;
+  --color-brand-300: #fdac74;
+  --color-brand-400: #fb8039;
+  --color-brand-500: #f97316; /* accent: numerals, icons, charts */
+  --color-brand-600: #e04e05;
+  --color-brand-700: #c2410c; /* primary action: AA with white text */
+  --color-brand-800: #9a3412;
+  --color-brand-900: #7c2d12;
+
+  /* ── Navy (brand blue: structure and navigation) ───────────────────────── */
+  --color-navy-50: #eff5ff;
+  --color-navy-100: #dbe8fe;
+  --color-navy-200: #bfd5fe;
+  --color-navy-300: #93b8fd;
+  --color-navy-400: #6093fa;
+  --color-navy-500: #3b74f6;
+  --color-navy-600: #2558eb;
+  --color-navy-700: #1d4ed8; /* links, active nav: AA with white text */
+  --color-navy-800: #1e40af;
+  --color-navy-900: #1e3a8a;
+  --color-navy-950: #172554;
+
+  /* ── Sell (brand red: the till, and nothing else) ──────────────────────── */
+  --color-sell-50: #fef2f2;
+  --color-sell-100: #fee2e2;
+  --color-sell-500: #ef4444;
+  --color-sell-600: #dc2626; /* AA with white text */
+  --color-sell-700: #b91c1c;
+  --color-sell-800: #991b1b;
+
+  /* ── Semantic (meaning only) ───────────────────────────────────────────── */
+  /* 50 = tinted panel, 100 = soft border, 200 = visible border on a tinted
+     panel, 500 = icon/dot, 700 = text (AA on the 50 tint). Nothing in between —
+     a semantic colour with ten shades invites decoration, and these four
+     families exist to carry meaning, not to be chosen from. */
+  --color-good-50: #ecfdf3;
+  --color-good-100: #d1fadf;
+  --color-good-200: #a6f4c5;
+  --color-good-500: #12b76a;
+  --color-good-700: #027a48;
+
+  --color-warn-50: #fffaeb;
+  --color-warn-100: #fef0c7;
+  --color-warn-200: #fedf89;
+  --color-warn-500: #f79009;
+  --color-warn-700: #b54708;
+
+  --color-bad-50: #fef3f2;
+  --color-bad-100: #fee4e2;
+  --color-bad-200: #fecdca;
+  --color-bad-500: #f04438;
+  --color-bad-700: #b42318;
+
+  --color-info-50: #eff8ff;
+  --color-info-100: #d1e9ff;
+  --color-info-200: #b2ddff;
+  --color-info-500: #2e90fa;
+  --color-info-700: #175cd3;
+
+  /* ── Surfaces ──────────────────────────────────────────────────────────── */
+  --color-canvas: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-hairline: #e9e9e9;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Flat, tight shadows. Nothing soft or diffuse — this is a tool, not a toy. */
+  --shadow-card: 0 1px 2px 0 rgb(10 10 10 / 0.04);
+  --shadow-raised: 0 1px 3px 0 rgb(10 10 10 / 0.08), 0 1px 2px -1px rgb(10 10 10 / 0.06);
+  --shadow-overlay: 0 8px 24px -4px rgb(10 10 10 / 0.12), 0 2px 6px -2px rgb(10 10 10 / 0.08);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* ═══════════════════════════════════════════════════════════════════════════
+   BASE
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: var(--color-hairline);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* The POS is keyboard-and-scanner driven; smooth scroll fights fast paging. */
+    scroll-behavior: auto;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink-900);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Money and quantities must align vertically in tables. Non-negotiable in a
+     till UI — ragged digits make totals hard to scan under queue pressure. */
+  .tabular,
+  th[data-numeric],
+  td[data-numeric] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* A visible, consistent focus ring. Cashiers work by keyboard. */
+  :focus-visible {
+    outline: 2px solid var(--color-navy-600);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Kill the number-input spinners — quantity is typed or stepped by buttons. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  ::selection {
+    background-color: var(--color-brand-100);
+    color: var(--color-brand-900);
+  }
+
+  /* Slim scrollbars so long product lists don't lose horizontal room. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-200) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-ink-200);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-ink-300);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPONENT PRIMITIVES
+
+   Declared as real CSS classes rather than repeated utility strings: these
+   appear on hundreds of elements and the markup stays readable.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  /* ── Buttons ───────────────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.625rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0.625rem 1rem;
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 120ms ease, border-color 120ms ease,
+      color 120ms ease;
+    user-select: none;
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background-color: var(--color-brand-700);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--color-brand-800);
+  }
+  .btn-primary:active:not(:disabled) {
+    background-color: var(--color-brand-900);
+  }
+
+  .btn-dark {
+    background-color: var(--color-ink-950);
+    color: #fff;
+  }
+  .btn-dark:hover:not(:disabled) {
+    background-color: var(--color-ink-800);
+  }
+
+  .btn-navy {
+    background-color: var(--color-navy-700);
+    color: #fff;
+  }
+  .btn-navy:hover:not(:disabled) {
+    background-color: var(--color-navy-800);
+  }
+
+  /* The till. Red is reserved for this and nothing else. */
+  .btn-sell {
+    background-color: var(--color-sell-600);
+    color: #fff;
+  }
+  .btn-sell:hover:not(:disabled) {
+    background-color: var(--color-sell-700);
+  }
+
+  .btn-outline {
+    background-color: var(--color-surface);
+    border-color: var(--color-ink-200);
+    color: var(--color-ink-800);
+  }
+  .btn-outline:hover:not(:disabled) {
+    background-color: var(--color-ink-50);
+    border-color: var(--color-ink-300);
+  }
+
+  .btn-ghost {
+    background-color: transparent;
+    color: var(--color-ink-600);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: var(--color-ink-100);
+    color: var(--color-ink-900);
+  }
+
+  .btn-danger {
+    background-color: var(--color-bad-700);
+    color: #fff;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background-color: #96190f;
+  }
+
+  .btn-lg {
+    padding: 0.875rem 1.25rem;
+    font-size: 1rem;
+    border-radius: 0.75rem;
+  }
+  .btn-sm {
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.8125rem;
+    border-radius: 0.5rem;
+  }
+  .btn-icon {
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+  }
+
+  /* ── Surfaces ──────────────────────────────────────────────────────────── */
+  .card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-hairline);
+    border-radius: 0.875rem;
+    box-shadow: var(--shadow-card);
+  }
+
+  .card-pad {
+    padding: 1.125rem;
+  }
+
+  /* ── Form controls ─────────────────────────────────────────────────────── */
+  .input,
+  .select,
+  .textarea {
+    width: 100%;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-ink-200);
+    border-radius: 0.625rem;
+    padding: 0.5625rem 0.75rem;
+    font-size: 0.9375rem;
+    color: var(--color-ink-900);
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .input::placeholder,
+  .textarea::placeholder {
+    color: var(--color-ink-400);
+  }
+  .input:focus,
+  .select:focus,
+  .textarea:focus {
+    outline: none;
+    border-color: var(--color-brand-700);
+    box-shadow: 0 0 0 3px var(--color-brand-100);
+  }
+  .input:disabled,
+  .select:disabled {
+    background-color: var(--color-ink-50);
+    color: var(--color-ink-400);
+    cursor: not-allowed;
+  }
+  .input[aria-invalid="true"] {
+    border-color: var(--color-bad-500);
+  }
+  .input[aria-invalid="true"]:focus {
+    box-shadow: 0 0 0 3px var(--color-bad-100);
+  }
+
+  .select {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236a6a6a' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.625rem center;
+    padding-right: 2rem;
+  }
+
+  .label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-ink-700);
+    margin-bottom: 0.375rem;
+  }
+
+  .hint {
+    font-size: 0.75rem;
+    color: var(--color-ink-500);
+    margin-top: 0.3125rem;
+  }
+
+  .error-text {
+    font-size: 0.75rem;
+    color: var(--color-bad-700);
+    margin-top: 0.3125rem;
+  }
+
+  /* ── Badges (stock state, statuses) ────────────────────────────────────── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3125rem;
+    border-radius: 999px;
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+  }
+  .badge-good {
+    background-color: var(--color-good-50);
+    color: var(--color-good-700);
+  }
+  .badge-warn {
+    background-color: var(--color-warn-50);
+    color: var(--color-warn-700);
+  }
+  .badge-bad {
+    background-color: var(--color-bad-50);
+    color: var(--color-bad-700);
+  }
+  .badge-info {
+    background-color: var(--color-info-50);
+    color: var(--color-info-700);
+  }
+  .badge-brand {
+    background-color: var(--color-brand-50);
+    color: var(--color-brand-800);
+  }
+  .badge-navy {
+    background-color: var(--color-navy-700);
+    color: #fff;
+  }
+  .badge-neutral {
+    background-color: var(--color-ink-100);
+    color: var(--color-ink-700);
+  }
+
+  /* ── Filter chips ──────────────────────────────────────────────────────────
+     The stock-health filter row. Idle chips are deliberately quiet — five
+     pills competing for attention would make the table feel louder than the
+     data. The active chip's colour IS the state it filters to (low = amber,
+     out = red, expiring = orange), so the row answers "what am I looking at?"
+     without a second label. Counts sit in a small inset well. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.5rem 0.375rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-ink-200);
+    background-color: var(--color-surface);
+    color: var(--color-ink-700);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease,
+      color 120ms ease;
+  }
+  .chip:hover {
+    border-color: var(--color-ink-300);
+    background-color: var(--color-ink-50);
+  }
+  .chip-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    height: 1.25rem;
+    padding: 0 0.375rem;
+    border-radius: 999px;
+    background-color: var(--color-ink-100);
+    color: var(--color-ink-600);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip-active-all {
+    background-color: var(--color-ink-950);
+    border-color: var(--color-ink-950);
+    color: #fff;
+  }
+  .chip-active-all .chip-count {
+    background-color: rgb(255 255 255 / 0.18);
+    color: #fff;
+  }
+  .chip-active-low {
+    background-color: var(--color-warn-50);
+    border-color: var(--color-warn-200);
+    color: var(--color-warn-700);
+  }
+  .chip-active-low .chip-count {
+    background-color: var(--color-warn-100);
+    color: var(--color-warn-700);
+  }
+  .chip-active-out {
+    background-color: var(--color-bad-50);
+    border-color: var(--color-bad-200);
+    color: var(--color-bad-700);
+  }
+  .chip-active-out .chip-count {
+    background-color: var(--color-bad-100);
+    color: var(--color-bad-700);
+  }
+  .chip-active-expiring {
+    background-color: var(--color-brand-50);
+    border-color: var(--color-brand-200);
+    color: var(--color-brand-800);
+  }
+  .chip-active-expiring .chip-count {
+    background-color: var(--color-brand-100);
+    color: var(--color-brand-800);
+  }
+
+  /* ── Contact chips (tap to call / WhatsApp / email) ──────────────────────────
+     A supplier's or customer's phone and WhatsApp as something you act on, not
+     just read. Quiet until touched, then brand — the same restraint as the
+     filter chips, scaled down to a contact detail. */
+  .contact-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3125rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-hairline);
+    background-color: var(--color-surface);
+    color: var(--color-ink-600);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+    transition: background-color 120ms ease, border-color 120ms ease,
+      color 120ms ease;
+  }
+  .contact-chip:hover {
+    border-color: var(--color-brand-200);
+    background-color: var(--color-brand-50);
+    color: var(--color-brand-800);
+  }
+
+  /* ── Tables ────────────────────────────────────────────────────────────── */
+  .data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.875rem;
+  }
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: var(--color-ink-50);
+    color: var(--color-ink-600);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    text-align: left;
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid var(--color-hairline);
+    white-space: nowrap;
+  }
+  .data-table tbody td {
+    padding: 0.6875rem 0.875rem;
+    border-bottom: 1px solid var(--color-ink-50);
+    color: var(--color-ink-800);
+    vertical-align: middle;
+  }
+  .data-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .data-table tbody tr:hover td {
+    background-color: var(--color-brand-50);
+  }
+
+  /* ── Misc ──────────────────────────────────────────────────────────────── */
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.375rem;
+    height: 1.375rem;
+    padding: 0 0.3125rem;
+    border-radius: 0.3125rem;
+    border: 1px solid var(--color-ink-200);
+    border-bottom-width: 2px;
+    background-color: var(--color-surface);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--color-ink-600);
+  }
+
+  .section-title {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-ink-400);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ANIMATION — restrained. A till should feel instant, not animated.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes cw-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes cw-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes cw-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(194 65 12 / 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgb(194 65 12 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(194 65 12 / 0);
+  }
+}
+
+.animate-fade-in {
+  animation: cw-fade-in 140ms ease-out;
+}
+.animate-slide-up {
+  animation: cw-slide-up 160ms ease-out;
+}
+.animate-pulse-ring {
+  animation: cw-pulse-ring 1.4s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THERMAL RECEIPT PRINTING
+
+   Targets 80mm and 58mm roll printers. Everything outside .receipt-sheet is
+   removed from the printed page so the roll doesn't waste paper on chrome.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.receipt-sheet {
+  width: 72mm; /* 80mm roll minus printer margins */
+  margin: 0 auto;
+  padding: 4mm 3mm;
+  background: #fff;
+  color: #000;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1.45;
+  /* Keep shapes crisp on 203dpi printers. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.receipt-sheet[data-width="58mm"] { width: 50mm; font-size: 10px; padding: 3mm 2mm; }
+.receipt-sheet[data-font="MONO"] { font-family: var(--font-mono); }
+.receipt-sheet[data-size="SMALL"] { font-size: 9.5px; }
+.receipt-sheet[data-size="LARGE"] { font-size: 12.5px; }
+.receipt-sheet[data-width="58mm"][data-size="LARGE"] { font-size: 11px; }
+
+.receipt-sheet .r-center { text-align: center; }
+.receipt-sheet .r-left { text-align: left; }
+.receipt-sheet .r-strong { font-weight: 700; }
+.receipt-sheet .r-nowrap { white-space: nowrap; }
+.receipt-sheet .r-muted { font-size: 0.9em; }
+.receipt-sheet .r-sub { font-size: 0.88em; opacity: 0.8; }
+.receipt-sheet .r-logo { max-height: 52px; max-width: 70%; margin: 0 auto 4px; display: block; filter: grayscale(1); }
+.receipt-sheet .r-left .r-logo { margin-left: 0; }
+.receipt-sheet .r-shop { font-weight: 800; font-size: 1.35em; line-height: 1.2; letter-spacing: -0.01em; }
+.receipt-sheet .r-tagline { font-style: italic; margin-top: 1px; }
+.receipt-sheet .r-row { display: flex; justify-content: space-between; gap: 8px; }
+.receipt-sheet .r-row > span:last-child { text-align: right; }
+.receipt-sheet .r-item { padding: 2px 0; }
+.receipt-sheet .r-item-name { min-width: 0; overflow-wrap: anywhere; }
+.receipt-sheet .r-count { text-align: right; margin-top: 2px; }
+.receipt-sheet .r-rule { border-top: 1px solid #000; margin: 7px 0; }
+.receipt-sheet .r-total {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 800;
+  font-size: 1.3em;
+  margin: 4px 0;
+}
+.receipt-sheet .r-banner { text-align: center; font-weight: 800; margin-top: 6px; letter-spacing: 0.06em; }
+.receipt-sheet .r-savings { text-align: center; font-weight: 700; margin-top: 6px; }
+.receipt-sheet .r-footer { white-space: pre-wrap; font-weight: 600; }
+.receipt-sheet .r-barcode { display: flex; justify-content: center; margin-top: 6px; }
+.receipt-sheet .r-barcode svg { max-width: 100%; height: auto; }
+
+/* Classic: typewriter lettering, dashed rules, plain total. */
+.receipt-sheet[data-style="CLASSIC"] .r-rule { border-top-style: dashed; }
+.receipt-sheet[data-style="CLASSIC"] .r-shop { text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Modern: hairline rules, the total framed in a box. */
+.receipt-sheet[data-style="MODERN"] .r-rule { border-top-width: 0.5px; opacity: 0.6; }
+.receipt-sheet[data-style="MODERN"] .r-total {
+  border: 1.5px solid #000;
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin: 6px 0;
+}
+.receipt-sheet[data-style="MODERN"] .r-items .r-item + .r-item { border-top: 0.5px dotted #000; }
+
+/* Bold: heavy shop name, thick rules, the total on a solid black bar. */
+.receipt-sheet[data-style="BOLD"] .r-shop { font-size: 1.65em; font-weight: 900; text-transform: uppercase; }
+.receipt-sheet[data-style="BOLD"] .r-rule { border-top-width: 2px; }
+.receipt-sheet[data-style="BOLD"] .r-total {
+  background: #000;
+  color: #fff;
+  padding: 5px 6px;
+  font-size: 1.4em;
+  margin: 6px 0;
+}
+
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+  html,
+  body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  /* Hide the app shell, show only the print sheet. This uses visibility, not
+     display, on purpose: a .print-root sits deep inside the admin layout
+     (sidebar → topbar → content → sheet), and a display:none on any ancestor
+     would blank the sheet along with everything else. visibility:hidden keeps
+     the box tree intact, then the sheet paints itself and its contents back in
+     and is lifted to the page origin so it doesn't print wherever the page
+     happened to be scrolled. */
+  body * {
+    visibility: hidden !important;
+  }
+  .print-root,
+  .print-root * {
+    visibility: visible !important;
+  }
+  .print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .receipt-sheet {
+    width: auto;
+    max-width: 72mm;
+    box-shadow: none;
+    border: none;
+    filter: none !important;
+  }
+  .receipt-sheet[data-width="58mm"] {
+    max-width: 50mm;
+  }
+  .receipt-paper-edge {
+    display: none !important;
+  }
+  /* Barcode labels: crisp bars, no colour management surprises. */
+  .barcode-svg {
+    shape-rendering: crispEdges;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK MODE (back office only)
+
+   Switched on by data-theme="dark" on the admin shell (app/(app)/AppShell.tsx).
+   The landing page and the till never carry it, so they stay as they are.
+
+   It works by swapping the colour tokens, not by restyling screens. Every
+   screen already says "surface", "ink-950", "hairline" and so on, so one swap
+   here re-colours the whole back office, including screens added later.
+
+   The ink scale is flipped (ink-950 becomes near-white text, ink-50 becomes a
+   dark tint) and the pale tints (navy-50, brand-50, good-50…) become deep,
+   low-light versions. Strong fills that carry white text (navy-700 buttons,
+   brand-700, sell-600) keep their light-mode values so their labels still pass
+   contrast. Only text set in those strong colours is lifted, below, because
+   dark blue text on a dark blue page would vanish.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-canvas: #0a1222;
+  --color-surface: #101b31;
+  --color-hairline: #22314f;
+
+  --color-ink-50: #15213a;
+  --color-ink-100: #1b2945;
+  --color-ink-200: #2a3a5c;
+  --color-ink-300: #3d5078;
+  --color-ink-400: #7286ad;
+  --color-ink-500: #91a2c4;
+  --color-ink-600: #aebcd8;
+  --color-ink-700: #c8d3ea;
+  --color-ink-800: #dce4f4;
+  --color-ink-900: #ebf0fa;
+  --color-ink-950: #f6f8fd;
+
+  --color-navy-50: #142a55;
+  --color-navy-100: #1a3466;
+  --color-navy-200: #254683;
+  --color-navy-300: #3a5ea6;
+
+  --color-brand-50: #2d1b10;
+  --color-brand-100: #3d2514;
+  --color-brand-200: #5c3618;
+  --color-brand-300: #7a4519;
+
+  --color-sell-50: #2c1518;
+  --color-sell-100: #3d1b1f;
+
+  --color-good-50: #0e2a20;
+  --color-good-100: #13392b;
+  --color-good-200: #1a4d39;
+
+  --color-warn-50: #2b2310;
+  --color-warn-100: #3b2f13;
+  --color-warn-200: #5a4616;
+
+  --color-bad-50: #2c1518;
+  --color-bad-100: #3d1b1f;
+  --color-bad-200: #5a2328;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-raised: 0 8px 24px -8px rgb(0 0 0 / 0.55);
+
+  background-color: var(--color-canvas);
+  color: var(--color-ink-900);
+}
+
+/* Text set in a strong brand colour: lift it so it reads on a dark page. */
+[data-theme="dark"] :is(.text-navy-600, .text-navy-700, .text-navy-800, .text-navy-900) {
+  color: #8fb3ff;
+}
+[data-theme="dark"] :is(.text-brand-700, .text-brand-800) {
+  color: #fdac74;
+}
+[data-theme="dark"] :is(.text-good-700) {
+  color: #4ade80;
+}
+[data-theme="dark"] :is(.text-bad-700) {
+  color: #fb8a80;
+}
+[data-theme="dark"] :is(.text-warn-700) {
+  color: #fdcf6c;
+}
+[data-theme="dark"] :is(.text-sell-600, .text-sell-700) {
+  color: #fca5a5;
+}
+
+/* ...but never inside a strong fill, where white or light text is already right. */
+[data-theme="dark"] :is(.bg-navy-700, .bg-navy-800, .bg-brand-700, .bg-sell-600) :is(.text-navy-700, .text-brand-700) {
+  color: inherit;
+}
+
+/* Dimmed backdrops behind dialogs use ink-950, which is now near-white. */
+[data-theme="dark"] :is(.bg-ink-950\/50, .bg-ink-950\/60) {
+  background-color: rgb(2 6 18 / 0.7);
+}
+/* Solid ink-950 fills (badges, toasts) would turn white; keep them dark. */
+[data-theme="dark"] .bg-ink-950 {
+  background-color: #020812;
+}
+[data-theme="dark"] .bg-ink-700 {
+  background-color: #33415e;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WAVE TEXTURE
+
+   The fine wavy lines from the brand posters: the pattern on a banknote,
+   which suits a product about money and stock. One 48×10 SVG, repeated: it
+   costs a few hundred bytes, never a photo download.
+
+   .texture-waves      light lines, for solid colour blocks (blue, red, orange)
+   .texture-waves-ink  faint blue lines, for white or canvas backgrounds
+
+   Both are a background-image only, so they sit under any background-color
+   and never change layout. Put the class on the same element as the fill.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.texture-waves {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='10' viewBox='0 0 48 10'%3E%3Cpath d='M0 5 Q6 1 12 5 T24 5 T36 5 T48 5' fill='none' stroke='rgba%28255%2C255%2C255%2C0.13%29' stroke-width='1.1'/%3E%3C/svg%3E");
+  background-size: 48px 10px;
+}
+.texture-waves-ink {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='10' viewBox='0 0 48 10'%3E%3Cpath d='M0 5 Q6 1 12 5 T24 5 T36 5 T48 5' fill='none' stroke='rgba%2829%2C78%2C216%2C0.075%29' stroke-width='1.1'/%3E%3C/svg%3E");
+  background-size: 48px 10px;
+}
+[data-theme="dark"] .texture-waves-ink {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='10' viewBox='0 0 48 10'%3E%3Cpath d='M0 5 Q6 1 12 5 T24 5 T36 5 T48 5' fill='none' stroke='rgba%28143%2C179%2C255%2C0.07%29' stroke-width='1.1'/%3E%3C/svg%3E");
+}
+
+/* The on-screen receipt sits on a sheet of "paper" with a torn bottom edge. */
+.receipt-paper-edge {
+  height: 8px;
+  background: #fff;
+  /* Little teeth along the bottom, like paper torn off the roll. */
+  -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 12px 100%;
+  mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 12px 100%;
 }

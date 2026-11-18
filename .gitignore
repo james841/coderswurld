@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+!.env.example
+
+# uploaded files (supplier receipts) — never commit customers' documents
+/storage

@@ -1,0 +1,1099 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// CODERSWURLD INVENTORY — multi-tenant inventory + POS + business management
+//
+// DESIGN RULES (do not break these, they are load-bearing):
+//
+//  1. MONEY IS ALWAYS `Int` IN KOBO. Never Float, never Decimal.
+//     ₦1,250.50  ->  125050. All money fields end in `Kobo`.
+//     Floating point money on a POS produces off-by-one-kobo change errors.
+//     Use lib/money.ts to convert at the UI edge only.
+//
+//  2. NO NATIVE ENUMS, NO SCALAR LISTS.
+//     Status/type columns are `String` narrowed by TypeScript unions in
+//     lib/constants.ts. Deliberate: adding a new order status in Postgres would
+//     otherwise need an `ALTER TYPE` migration, and `String` + a union gives the
+//     same compile-time safety with none of that friction. JSON payloads are
+//     stored as `String` for the same reason.
+//
+//  3. EVERY TENANT TABLE CARRIES `organizationId`, AND EVERY INDEX LEADS WITH
+//     IT. Tenant isolation is enforced in queries; the index order makes those
+//     scoped queries fast instead of full scans.
+//
+//  4. STOCK IS A LEDGER. `StockMovement` is the source of truth;
+//     `StockLevel.quantity` is a transactionally-maintained cache of it so the
+//     POS never has to SUM() anything.
+//
+//  5. PRODUCTS CARRY A `version`. The POS pulls deltas (version > lastSeen)
+//     instead of re-downloading the catalog. See lib/catalog.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 no longer accepts `url` here. The connection string lives in
+// prisma.config.ts for CLI/migrate, and the runtime client gets it through the
+// pg driver adapter in lib/db.ts.
+datasource db {
+  provider = "postgresql"
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PLATFORM LAYER — this is *your* layer. It sits above all tenants.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// The universal operator (you). Lives outside any organization and is the only
+/// role that can create, activate or suspend an organization.
+model PlatformAdmin {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/// A plan request submitted from the public landing page. This is what lands in
+/// your inbox: everything you need to quote the business and invoice them.
+model Lead {
+  id        String @id @default(cuid())
+  reference String @unique // CW-0001 — quote this in the email thread
+
+  // who is asking
+  companyName  String
+  businessType String  @default("SUPERMARKET")
+  contactName  String
+  contactRole  String? // "Owner", "Manager"
+  email        String
+  phone        String
+  whatsapp     String?
+
+  // where they are
+  state   String?
+  city    String?
+  address String?
+
+  // how big they are — drives which plan actually fits them
+  branchCount Int @default(1)
+  staffCount  Int @default(1)
+  skuEstimate Int @default(0)
+
+  // what they picked
+  plan          String @default("STARTER") // STARTER | BUSINESS | ENTERPRISE
+  billingCycle  String @default("YEARLY")
+  quotedKobo    Int    @default(0)
+  currency      String @default("NGN")
+
+  // your pipeline
+  status       String    @default("NEW") // NEW | CONTACTED | INVOICED | PAID | PROVISIONED | REJECTED
+  notes        String?
+  invoicedAt   DateTime?
+  paidAt       DateTime?
+  rejectedAt   DateTime?
+  source       String    @default("LANDING_PAGE")
+  ipAddress    String?
+  userAgent    String?
+
+  // Where this visitor first came from (Google, Facebook, a campaign link...),
+  // carried over from the site's own visit tracking. Null for older leads.
+  trafficSource String?
+  visitorId     String?
+
+  // set once you provision them
+  organizationId String?       @unique
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([plan, status])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TENANT ROOT
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// One business = one Organization = one tenant boundary.
+model Organization {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+
+  businessType String  @default("SUPERMARKET")
+  email        String
+  phone        String
+  whatsapp     String?
+  address      String?
+  city         String?
+  state        String?
+  logoUrl      String?
+
+  currency String @default("NGN")
+  timezone String @default("Africa/Lagos")
+  locale   String @default("en-NG")
+
+  plan   String @default("STARTER") // STARTER | BUSINESS | ENTERPRISE
+  status String @default("PENDING") // PENDING | ACTIVE | SUSPENDED | EXPIRED
+
+  /// Bumped on every catalog mutation. POS clients send the version they hold
+  /// and receive only what changed. This is what makes product load feel instant.
+  catalogVersion Int @default(1)
+
+  activatedAt DateTime?
+  suspendedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  lead          Lead?
+  settings      OrgSettings?
+  subscriptions Subscription[]
+  branches      Branch[]
+  users         User[]
+  categories    Category[]
+  suppliers     Supplier[]
+  products      Product[]
+  stockLevels   StockLevel[]
+  movements     StockMovement[]
+  customers     Customer[]
+  sales         Sale[]
+  saleItems     SaleItem[]
+  purchases     Purchase[]
+  purchaseItems PurchaseItem[]
+  supplierReceipts SupplierReceipt[]
+  payments      Payment[]
+  expenses      Expense[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  counters      Counter[]
+  devices       Device[]
+  reportLogs    ReportLog[]
+
+  @@index([status])
+  stockBatches StockBatch[]
+}
+
+/// Per-organization preferences. One row per org, created at activation.
+///
+/// This is where the main admin chooses how the end-of-day sales report reaches
+/// them — email, WhatsApp, both, or not at all — which was an explicit
+/// requirement, not a nice-to-have.
+model OrgSettings {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// The shop runs a supermarket AND a pharmacy, and wants them kept apart at
+  /// the till. Off: everything behaves as one shop.
+  departmentsEnabled Boolean @default(false)
+
+  // ── Daily sales report delivery ─────────────────────────────────────────
+  /// Off until the owner switches it on in Settings.
+  dailyReportEnabled Boolean @default(false)
+  /// NONE | EMAIL | WHATSAPP | BOTH
+  reportChannel      String  @default("EMAIL")
+  /// Falls back to Organization.email / Organization.whatsapp when blank.
+  reportEmail        String?
+  reportWhatsapp     String?
+  /// 24-hour local time the report is cut, e.g. "21:00". Stored as text because
+  /// it is a wall-clock preference, not an instant — DST and timezone changes
+  /// must not shift when a shop's day closes.
+  reportTime         String  @default("21:00")
+  /// Send a copy to every main admin as well as the configured address.
+  reportToAllAdmins  Boolean @default(false)
+
+  // ── Alerts ──────────────────────────────────────────────────────────────
+  /// Warn this many days before a product expires. Default 90 = three months.
+  expiryWarningDays  Int     @default(90)
+  expiryAlertsOn     Boolean @default(true)
+  lowStockAlertsOn   Boolean @default(true)
+  /// Org-wide floor used when a product has no minStock of its own.
+  defaultLowStock    Float   @default(5)
+
+  // ── Receipt ─────────────────────────────────────────────────────────────
+  /// 80mm | 58mm — thermal roll width.
+  receiptWidth       String  @default("80mm")
+  receiptHeader      String?
+  receiptFooter      String  @default("Thank you for your patronage!")
+  receiptShowLogo    Boolean @default(false)
+  receiptShowCashier Boolean @default(true)
+  /// Print automatically when a sale completes instead of showing a preview.
+  receiptAutoPrint   Boolean @default(false)
+  /// How the receipt looks: style, lettering, size and which extra lines show.
+  /// Shape and defaults live in lib/receiptDesign.ts; null means all defaults.
+  receiptDesign      Json?
+
+  // ── Till behaviour ──────────────────────────────────────────────────────
+  /// Selling below zero stock. Off by default: a shop that lets stock go
+  /// negative can never trust its own figures again.
+  allowNegativeStock Boolean @default(false)
+  /// Auto-switch to the wholesale price once a line hits Product.wholesaleMinQty.
+  autoWholesale      Boolean @default(true)
+  /// RETAIL | WHOLESALE — what a new sale starts as.
+  defaultPriceMode   String  @default("RETAIL")
+  /// Require selecting a customer before a sale can be put on credit.
+  requireCustomerForCredit Boolean @default(true)
+  /// Cashiers must enter a PIN to open the till after inactivity.
+  requireTillPin     Boolean @default(false)
+
+  // ── Tax ─────────────────────────────────────────────────────────────────
+  /// Nigerian VAT is 7.5%, but most small shops price inclusive and do not
+  /// itemise it. Off by default; basis points so 7.5% is exactly 750.
+  vatEnabled         Boolean @default(false)
+  vatBasisPoints     Int     @default(750)
+  vatInclusive       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Paid term. Nigerian market reality: upfront annual, paid by transfer, so the
+/// record of truth is "you confirmed the money landed", not a card webhook.
+model Subscription {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  plan         String
+  amountKobo   Int
+  currency     String @default("NGN")
+  billingCycle String @default("YEARLY") // YEARLY | BIENNIAL | LIFETIME
+
+  startsAt  DateTime
+  expiresAt DateTime
+  status    String   @default("ACTIVE") // ACTIVE | EXPIRED | CANCELLED
+
+  paymentMethod    String? // BANK_TRANSFER | CASH | CARD | OTHER
+  paymentReference String?
+  paidAt           DateTime?
+  amountPaidKobo   Int       @default(0)
+
+  seatsMainAdmin Int @default(1)
+  seatsSubAdmin  Int @default(2)
+  seatsCashier   Int @default(3)
+  maxBranches    Int @default(1)
+
+  notes                String?
+  recordedByAdminId    String? // PlatformAdmin who confirmed payment
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([organizationId, status])
+  @@index([expiresAt, status])
+}
+
+model Branch {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name    String
+  code    String // 2–4 chars, prefixes receipt numbers: IKJ-000148
+  address String?
+  phone   String?
+  isMain  Boolean @default(false)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  stockLevels StockLevel[]
+  movements   StockMovement[]
+  sales       Sale[]
+  purchases   Purchase[]
+  expenses    Expense[]
+  devices     Device[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  stockBatches StockBatch[]
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PEOPLE & PERMISSIONS
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// role is the coarse bucket; `permissions` is the fine-grained grant list that
+/// a MAIN_ADMIN hands out. MAIN_ADMIN always behaves as "all permissions" and
+/// its grant list is ignored — see lib/permissions.ts.
+model User {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  name         String
+  /// Optional for staff: many cashiers have no email. The main admin keeps one
+  /// for reports and password recovery.
+  email        String?
+  /// The name, lower-cased with spaces tidied, for signing in by name.
+  /// Kept unique among a shop's active staff by the staff API.
+  loginName    String?
+  phone        String?
+  passwordHash String
+
+  role        String  @default("CASHIER") // MAIN_ADMIN | SUB_ADMIN | MANAGER | CASHIER | STOREKEEPER
+  /// SUPERMARKET | PHARMACY, or null for both. Only applies to cashiers and
+  /// storekeepers while the shop has departments turned on; admins and
+  /// managers always see both.
+  department String?
+  /// JSON array of permission keys, e.g. ["products.view","pos.sell"]
+  permissions String  @default("[]")
+  /// 4–6 digit code for fast till switching without typing an email.
+  pinHash     String?
+
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+  createdById        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales      Sale[]
+  movements  StockMovement[]
+  expenses   Expense[]
+  purchases  Purchase[]
+  payments   Payment[]
+  auditLogs  AuditLog[]
+  supplierReceipts SupplierReceipt[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId, role, isActive])
+  /// Sign-in looks a user up by email alone — nobody knows their organization id
+  /// at the login screen. Without this the composite unique above is useless for
+  /// that query and every login becomes a sequential scan of every user on the
+  /// platform.
+  @@index([email])
+  @@index([loginName])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CATALOG
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Category {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name      String
+  color     String? // hex accent for POS category chips
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, sortOrder])
+}
+
+/// A supplier OR an informal purchase source — the market stall the shop
+/// actually buys from. `type` distinguishes them; `marketName` + `location`
+/// capture "where we bought it" so every product traces back to a place.
+model Supplier {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name       String
+  type       String  @default("MARKET") // MARKET | DISTRIBUTOR | MANUFACTURER | SHOP | ONLINE | OTHER
+  marketName String? // "Mile 12 Market", "Trade Fair"
+  location   String? // town / area
+  address    String?
+
+  contactPerson String?
+  phone         String?
+  whatsapp      String?
+  email         String?
+  notes         String?
+
+  /// What we still owe this source, in kobo. Maintained with purchases/payments.
+  balanceKobo Int     @default(0)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products  Product[]
+  purchases Purchase[]
+  payments  Payment[]
+  receipts  SupplierReceipt[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+  @@index([organizationId, type])
+}
+
+model Product {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// SUPERMARKET | PHARMACY. Only used when the shop turns departments on
+  /// (OrgSettings.departmentsEnabled); cashiers assigned to one department
+  /// see and sell only its products.
+  department String @default("SUPERMARKET")
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// Default purchase source — "where this item normally comes from".
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  name        String
+  sku         String
+  /// Nullable on purpose: bulk Excel imports land without barcodes and the shop
+  /// attaches them later with a scanner. NULLs don't collide in a unique index.
+  barcode     String?
+  description String?
+  unit        String  @default("pcs") // pcs | carton | kg | litre | bag | crate
+  packSize    String? // "12 x 50cl"
+
+  // ── pricing: three tiers, all kobo ───────────────────────────────────────
+  costPriceKobo      Int @default(0)
+  sellingPriceKobo   Int @default(0)
+  wholesalePriceKobo Int @default(0)
+  /// Cart quantity at or above which wholesale price auto-applies.
+  wholesaleMinQty    Int @default(12)
+
+  // ── stock control ────────────────────────────────────────────────────────
+  minStock Float @default(0) // reorder level -> drives LOW_STOCK alerts
+
+  // ── expiry ───────────────────────────────────────────────────────────────
+  trackExpiry Boolean   @default(false)
+  expiryDate  DateTime? // nearest expiry; batch-level lives on PurchaseItem
+
+  imageUrl   String? // compressed WebP, optional
+  imageThumb String? // ~2KB data-uri for instant POS tiles
+
+  isActive Boolean @default(true)
+
+  /// Auto-captured date the goods were entered into the system.
+  entryDate   DateTime @default(now())
+  createdById String?
+
+  /// Monotonic per-catalog revision. Drives POS delta sync — never decrement.
+  version Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stockLevels   StockLevel[]
+  movements     StockMovement[]
+  saleItems     SaleItem[]
+  purchaseItems PurchaseItem[]
+
+  @@unique([organizationId, sku])
+  @@unique([organizationId, barcode])
+  @@index([organizationId, version]) // delta sync
+  @@index([organizationId, isActive])
+  @@index([organizationId, expiryDate]) // expiry sweep
+  @@index([organizationId, supplierId]) // "everything we bought from X"
+  @@index([organizationId, categoryId])
+  @@index([organizationId, name])
+  @@index([organizationId, department])
+  batches StockBatch[]
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// STOCK — ledger + cached level
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Cached current quantity per product per branch. Always written inside the
+/// same transaction as the StockMovement that caused the change.
+model StockLevel {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  quantity       Float     @default(0)
+  lastMovementAt DateTime?
+  lastCountedAt  DateTime?
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, branchId])
+  @@index([organizationId, branchId])
+}
+
+/// Append-only. Never UPDATE or DELETE a row here — corrections are new rows.
+/// This is what lets you answer "why is stock 136?" three months later.
+model StockMovement {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// OPENING | PURCHASE | SALE | RETURN | ADJUSTMENT | TRANSFER_IN |
+  /// TRANSFER_OUT | DAMAGE | EXPIRED | RECOUNT
+  type         String
+  /// Signed delta: +50 received, -3 sold.
+  quantity     Float
+  /// Running balance after this row — makes the ledger readable without re-summing.
+  balanceAfter Float
+  unitCostKobo Int    @default(0)
+
+  referenceType String? // SALE | PURCHASE | MANUAL | IMPORT | TRANSFER
+  referenceId   String?
+  reason        String?
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, productId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CUSTOMERS
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Customer {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name     String
+  phone    String?
+  whatsapp String?
+  email    String?
+  address  String?
+  notes    String?
+
+  creditLimitKobo Int @default(0)
+  /// Outstanding debt owed to the business, in kobo.
+  balanceKobo     Int @default(0)
+  totalSpentKobo  Int @default(0)
+  purchaseCount   Int @default(0)
+
+  lastPurchaseAt DateTime?
+  isActive       Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales    Sale[]
+  payments Payment[]
+
+  @@index([organizationId, phone])
+  @@index([organizationId, name])
+  @@index([organizationId, balanceKobo])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SALES / POS
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Sale {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  cashierId String
+  cashier   User   @relation(fields: [cashierId], references: [id])
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  receiptNo String
+  /// Client-generated UUID. Unique per org so replaying a queued offline sale
+  /// can never double-post. This is the idempotency key.
+  localId   String?
+  deviceId  String?
+
+  subtotalKobo Int
+  discountKobo Int @default(0)
+  taxKobo      Int @default(0)
+  totalKobo    Int
+
+  /// COGS + profit snapshotted at sale time. Cost prices change; history must not.
+  costTotalKobo Int @default(0)
+  profitKobo    Int @default(0)
+
+  /// What the customer handed over, and what they got back.
+  tenderedKobo Int @default(0)
+  changeKobo   Int @default(0)
+  paidKobo     Int @default(0)
+  /// Unpaid remainder on a credit sale.
+  balanceKobo  Int @default(0)
+
+  paymentMethod    String  @default("CASH") // CASH | TRANSFER | POS | CREDIT | SPLIT
+  /// JSON for SPLIT: [{"method":"CASH","amountKobo":50000}, ...]
+  paymentBreakdown String?
+  priceMode        String  @default("RETAIL") // RETAIL | WHOLESALE
+
+  status String  @default("COMPLETED") // COMPLETED | VOIDED | REFUNDED | PARTIAL_REFUND
+  note   String?
+  voidedReason String?
+
+  /// Wall-clock time of the sale on the till — may predate createdAt when the
+  /// sale was made offline and synced later. All reporting uses soldAt.
+  soldAt    DateTime  @default(now())
+  syncedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  items    SaleItem[]
+  payments Payment[]
+
+  @@unique([organizationId, receiptNo])
+  @@unique([organizationId, localId])
+  @@index([organizationId, soldAt])
+  @@index([organizationId, cashierId, soldAt]) // per-cashier daily tracking
+  @@index([organizationId, branchId, soldAt])
+  @@index([organizationId, status, soldAt])
+  @@index([organizationId, customerId])
+}
+
+/// Line items snapshot name/sku/price so a receipt reprinted next year still
+/// shows what was actually sold at the price it was actually sold for.
+model SaleItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  saleId         String
+  sale           Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  productName String
+  sku         String?
+  barcode     String?
+  unit        String  @default("pcs")
+
+  quantity       Float
+  unitPriceKobo  Int
+  unitCostKobo   Int   @default(0)
+  discountKobo   Int   @default(0)
+  lineTotalKobo  Int
+  lineProfitKobo Int   @default(0)
+  priceType      String @default("RETAIL") // RETAIL | WHOLESALE
+
+  @@index([saleId])
+  @@index([organizationId, productId])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PURCHASING
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Purchase {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+
+  reference String // PO-000014
+  invoiceNo String?
+  purchaseDate DateTime @default(now())
+
+  subtotalKobo  Int @default(0)
+  /// Transport is a real, separate line in Nigerian market buying.
+  transportKobo Int @default(0)
+  otherCostKobo Int @default(0)
+  totalKobo     Int @default(0)
+
+  amountPaidKobo Int @default(0)
+  balanceKobo    Int @default(0)
+  paymentStatus  String @default("UNPAID") // UNPAID | PARTIAL | PAID
+  status         String @default("RECEIVED") // DRAFT | RECEIVED | CANCELLED
+
+  note        String?
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items    PurchaseItem[]
+  payments Payment[]
+  receipts SupplierReceipt[]
+
+  @@unique([organizationId, reference])
+  @@index([organizationId, supplierId, purchaseDate])
+  @@index([organizationId, purchaseDate])
+  @@index([organizationId, paymentStatus])
+}
+
+/// Batch-level expiry lives here — the same product received twice can carry
+/// two different expiry dates.
+model PurchaseItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  purchaseId     String
+  purchase       Purchase     @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  quantity      Float
+  unitCostKobo  Int
+  lineTotalKobo Int
+
+  batchNo    String?
+  expiryDate DateTime?
+
+  @@index([purchaseId])
+  @@index([organizationId, productId])
+  @@index([organizationId, expiryDate])
+}
+
+/// A photographed or scanned receipt / invoice from a supplier — the paper the
+/// market trader or the company's delivery driver hands over.
+///
+/// The bytes do NOT live in this table. `fileKey` points into object storage
+/// (see lib/storage.ts); the row holds only what is needed to find the paper
+/// again: who it came from, its number, the date and the amount.
+///
+/// `supplierName` is a snapshot, deliberately duplicated from Supplier, so
+/// "search by name" is one indexed-by-tenant scan with no join, and a receipt
+/// still reads correctly after the supplier is renamed.
+model SupplierReceipt {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// Linked when the typed name matches a saved supplier (or the receipt backs
+  /// up a purchase). Null for a name that isn't a saved supplier, like "Market".
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id])
+  /// Who the paper is from, as the admin or manager typed it. This is what
+  /// search and the supplier filter use.
+  supplierName String
+
+  /// Our own ID for the paper: RCT-000014. Unique per business.
+  reference String
+  /// The number printed on the supplier's receipt or invoice, if it has one.
+  receiptNo   String?
+  receiptDate DateTime @default(now())
+  /// Total on the paper, in kobo. Optional — a waybill carries no amount.
+  amountKobo  Int?
+  note        String?
+
+  /// The goods-received record this paper backs up, when there is one.
+  purchaseId String?
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
+  fileKey      String
+  fileMime     String
+  fileBytes    Int
+  /// Size of the photo before it was compressed in the browser. Kept so the
+  /// saving is measurable ("3.4 MB -> 180 KB") rather than assumed.
+  originalBytes Int     @default(0)
+  /// Small preview for the grid. Null for PDFs.
+  thumbKey     String?
+  /// SHA-256 of the stored file. Stops the same photo being filed twice.
+  sha256       String
+
+  uploadedById   String?
+  uploadedBy     User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedByName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, reference])
+  @@unique([organizationId, sha256])
+  @@index([organizationId, receiptDate])
+  @@index([organizationId, supplierId, receiptDate])
+  @@index([organizationId, receiptNo])
+  @@index([organizationId, purchaseId])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MONEY MOVEMENT
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// One table, two directions. IN = customer settling a debt.
+/// OUT = us paying a supplier. Keeps the cash ledger in one place.
+model Payment {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  direction String // IN | OUT
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  saleId     String?
+  sale       Sale?     @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  purchaseId String?
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
+  amountKobo Int
+  method     String  @default("CASH") // CASH | TRANSFER | POS | CHEQUE
+  reference  String?
+  note       String?
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  paidAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, paidAt])
+  @@index([organizationId, direction, paidAt])
+  @@index([organizationId, customerId])
+  @@index([organizationId, supplierId])
+}
+
+model Expense {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  /// RENT | ELECTRICITY | TRANSPORT | SALARIES | INTERNET | PACKAGING |
+  /// REPAIRS | SUPPLIES | LEVIES | FUEL | MISC
+  category      String
+  amountKobo    Int
+  description   String?
+  vendor        String?
+  paymentMethod String  @default("CASH")
+  receiptUrl    String?
+
+  expenseDate DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, expenseDate])
+  @@index([organizationId, category, expenseDate])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// OBSERVABILITY
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Price edits, stock adjustments, voided sales, permission changes.
+/// before/after are JSON strings so the diff is reconstructable.
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName String? // snapshot — survives user deletion
+
+  action   String // PRICE_CHANGED | STOCK_ADJUSTED | SALE_VOIDED | USER_PERMISSIONS_CHANGED ...
+  entity   String // Product | Sale | User ...
+  entityId String?
+  summary  String // human-readable one-liner for the audit table
+
+  beforeJson String?
+  afterJson  String?
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, entity, entityId])
+  @@index([organizationId, userId, createdAt])
+}
+
+/// In-app alerts. `dedupeKey` stops the expiry sweep re-alerting the same
+/// product every time it runs.
+model Notification {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// EXPIRY_SOON | EXPIRED | LOW_STOCK | OUT_OF_STOCK | DEBT_DUE |
+  /// SUBSCRIPTION_EXPIRING | SYNC_FAILED
+  type     String
+  severity String @default("INFO") // INFO | WARNING | CRITICAL
+
+  title String
+  body  String
+  /// Deep link to the filtered list of affected records.
+  linkHref String?
+
+  entityType String?
+  entityId   String?
+  /// Rolling count for aggregate alerts ("8 products expiring").
+  count      Int     @default(1)
+
+  dedupeKey String
+
+  isRead Boolean   @default(false)
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, isRead, createdAt])
+  @@index([organizationId, type])
+}
+
+/// Atomic per-org sequences for human-readable document numbers.
+/// Incremented inside the same transaction as the document it numbers.
+model Counter {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  key   String // receipt | purchase | adjustment
+  value Int    @default(0)
+
+  @@unique([organizationId, key])
+}
+
+/// Registered tills. Lets you see which device is behind on sync and scope
+/// receipt numbering / offline queues per physical machine.
+model Device {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  deviceId String // client-generated, persisted in localStorage
+  label    String?
+  platform String?
+
+  catalogVersionSeen Int       @default(0)
+  pendingCount       Int       @default(0)
+  lastSeenAt         DateTime?
+  lastSyncAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, deviceId])
+  @@index([organizationId, lastSeenAt])
+}
+
+/// Delivery receipt for the automated daily/weekly/monthly business report.
+/// Doubles as the idempotency guard so a cron retry can't double-send.
+model ReportLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  period    String // DAILY | WEEKLY | MONTHLY
+  periodKey String // 2026-09-19 | 2026-W38 | 2026-09
+  channel   String // EMAIL | WHATSAPP
+  recipient String
+
+  status       String  @default("PENDING") // PENDING | SENT | FAILED
+  errorMessage String?
+  /// Snapshot of the figures that were sent.
+  payloadJson  String?
+
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([organizationId, period, periodKey, channel])
+  @@index([organizationId, createdAt])
+}
+
+/// One page view on the public site (landing page, sign-in).
+///
+/// First-party and cookie-free: the browser keeps a random visitor id in
+/// localStorage, and no IP address is stored. A second beacon when the visitor
+/// leaves fills in how long they stayed and how far they scrolled.
+model PageView {
+  id        String @id // generated in the browser so the leave beacon can find it
+  visitorId String
+  sessionId String
+  path      String
+
+  // where they came from
+  referrerHost String? // "google.com", null when typed or bookmarked
+  source       String  // "Google", "Facebook", "Direct", or the utm_source
+  channel      String  // SEARCH | SOCIAL | REFERRAL | CAMPAIGN | DIRECT
+  utmSource    String?
+  utmMedium    String?
+  utmCampaign  String?
+
+  // where they are (country from the host's edge header, else the browser's time zone)
+  country  String? // ISO code, e.g. "NG"
+  timezone String?
+
+  // what they used
+  device  String // MOBILE | TABLET | DESKTOP
+  browser String?
+  os      String?
+
+  isNewVisitor Boolean @default(true)
+
+  // filled by the leave beacon
+  durationMs  Int?
+  scrollDepth Int? // 0-100
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([visitorId])
+  @@index([channel, createdAt])
+}
+
+/// One delivery of a product with its own batch number and expiry date, and
+/// how much of it is still on the shelf.
+///
+/// Kept in step by lib/stock.ts `applyMovement`: stock arriving with an expiry
+/// opens a batch, stock leaving is taken from the batch that expires first
+/// (still-good batches before expired ones). Product.expiryDate is the nearest
+/// still-good expiry across the shop, for the till and the products list.
+model StockBatch {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  batchNo    String?
+  expiryDate DateTime?
+
+  quantityReceived Float
+  quantityLeft     Float
+  unitCostKobo     Int   @default(0)
+
+  /// PURCHASE | OPENING | ADJUSTMENT
+  source      String  @default("PURCHASE")
+  referenceId String?
+
+  receivedAt   DateTime  @default(now())
+  /// Set when the remainder is removed as expired or damaged.
+  writtenOffAt DateTime?
+
+  @@index([organizationId, expiryDate])
+  @@index([productId, branchId])
+}
