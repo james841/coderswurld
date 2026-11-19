@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, FolderOpen, Plus } from "lucide-react";
+import { ArrowLeft, Ban, FolderOpen, History, PencilLine, Plus } from "lucide-react";
 
 import { prisma } from "@/lib/db";
 import { requireTenant } from "@/lib/auth";
@@ -9,6 +9,7 @@ import { PERMISSIONS } from "@/lib/constants";
 
 import { NoAccess } from "@/components/ui/NoAccess";
 import { PurchaseDetailClient, type PurchaseDetail } from "./PurchaseDetailClient";
+import { PurchaseActions } from "./CorrectPurchase";
 
 /**
  * One delivery, in full.
@@ -51,6 +52,12 @@ export default async function PurchaseDetailPage({
       paymentStatus: true,
       status: true,
       note: true,
+      createdAt: true,
+      createdBy: { select: { name: true } },
+      changes: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, action: true, reason: true, details: true, userName: true, createdAt: true },
+      },
       supplier: { select: { id: true, name: true, phone: true, whatsapp: true } },
       branch: { select: { name: true, code: true } },
       items: {
@@ -97,6 +104,8 @@ export default async function PurchaseDetailPage({
     supplier: purchase.supplier,
     branch: purchase.branch,
     multiBranch: false, // filled below
+    enteredBy: purchase.createdBy?.name ?? "Unknown",
+    enteredAt: purchase.createdAt.toISOString(),
     items: purchase.items.map((it) => ({
       id: it.id,
       quantity: it.quantity,
@@ -130,6 +139,35 @@ export default async function PurchaseDetailPage({
   });
   const canFileReceipt = hasPermission(user, PERMISSIONS.RECEIPTS_MANAGE);
 
+  // Correcting needs the products and suppliers to pick from; only load them
+  // for people allowed to correct.
+  const canCorrect = hasPermission(user, PERMISSIONS.PURCHASES_MANAGE) && purchase.status !== "CANCELLED";
+  const [pickProducts, pickSuppliers] = canCorrect
+    ? await Promise.all([
+        prisma.product.findMany({
+          where: { organizationId: org.id, isActive: true },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, sku: true, barcode: true, unit: true, costPriceKobo: true },
+        }),
+        prisma.supplier.findMany({
+          where: { organizationId: org.id, isActive: true },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        }),
+      ])
+    : [[], []];
+
+  const fmtWhen = new Intl.DateTimeFormat("en-NG", { timeZone: org.timezone, dateStyle: "medium", timeStyle: "short" });
+  const history = purchase.changes.map((c) => {
+    let details: string[] = [];
+    try {
+      details = JSON.parse(c.details) as string[];
+    } catch {
+      details = [];
+    }
+    return { ...c, details };
+  });
+
   return (
     <>
       <Link
@@ -143,7 +181,57 @@ export default async function PurchaseDetailPage({
         purchase={detail}
         canPay={hasPermission(user, PERMISSIONS.PURCHASES_PAY)}
         timezone={org.timezone}
+        actions={
+          canCorrect ? (
+            <PurchaseActions purchase={detail} products={pickProducts} suppliers={pickSuppliers} />
+          ) : undefined
+        }
       />
+
+      {/* Every correction, newest first: who, when, why, and old to new values. */}
+      <section className="card mt-4 overflow-hidden">
+        <h2 className="section-title flex items-center gap-2 border-b border-hairline px-4 py-3">
+          <History className="size-4 text-navy-600" />
+          Change history
+        </h2>
+        <ol className="divide-y divide-hairline">
+          {history.map((c) => (
+            <li key={c.id} className="flex gap-3 px-4 py-3.5">
+              <span
+                className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-full ${
+                  c.action === "CANCEL" ? "bg-bad-50 text-bad-700" : "bg-brand-50 text-brand-700"
+                }`}
+              >
+                {c.action === "CANCEL" ? <Ban className="size-4" /> : <PencilLine className="size-4" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-ink-900">
+                  <span className="font-semibold">{c.userName}</span>{" "}
+                  {c.action === "CANCEL" ? "cancelled this purchase" : "corrected this purchase"}
+                  <span className="text-ink-400"> · {fmtWhen.format(c.createdAt)}</span>
+                </p>
+                <p className="mt-0.5 text-sm italic text-ink-600">&ldquo;{c.reason}&rdquo;</p>
+                {c.details.length > 0 && (
+                  <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-sm text-ink-700">
+                    {c.details.map((d, i) => (
+                      <li key={i}>{d}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </li>
+          ))}
+          <li className="flex gap-3 px-4 py-3.5">
+            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-ink-100 text-ink-500">
+              <Plus className="size-4" />
+            </span>
+            <p className="text-sm text-ink-900">
+              <span className="font-semibold">{detail.enteredBy}</span> entered this purchase
+              <span className="text-ink-400"> · {fmtWhen.format(purchase.createdAt)}</span>
+            </p>
+          </li>
+        </ol>
+      </section>
 
       {/*
         Receipts sit under the delivery they prove. Each chip opens the filed

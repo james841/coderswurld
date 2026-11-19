@@ -11,6 +11,7 @@ import {
   MapPin,
   Banknote,
   X,
+  UserRound,
 } from "lucide-react";
 
 import { formatNaira, parseMoneyInput } from "@/lib/money";
@@ -18,10 +19,10 @@ import { PRODUCT_UNITS } from "@/lib/constants";
 import { PaymentBadge } from "../PurchasesClient";
 
 /**
- * One delivery, read-only — plus the one thing you still do to it: pay down what
- * you owe. Everything else about a purchase is history the moment it's recorded
- * (the stock is already on the shelf), so there's nothing to edit here. The only
- * live figure is the balance, and the only action is settling it.
+ * One delivery. Paying down what you owe happens here; admins and managers can
+ * also correct a mistake or cancel it (see CorrectPurchase.tsx), and every
+ * change is kept in the purchase history shown under it.
+ *
  */
 
 export interface PurchaseDetail {
@@ -41,6 +42,9 @@ export interface PurchaseDetail {
   supplier: { id: string; name: string; phone: string | null; whatsapp: string | null };
   branch: { name: string; code: string };
   multiBranch: boolean;
+  /** Who typed this purchase in, and when (not the delivery date). */
+  enteredBy: string;
+  enteredAt: string;
   items: {
     id: string;
     quantity: number;
@@ -73,10 +77,13 @@ export function PurchaseDetailClient({
   purchase: p,
   canPay,
   timezone,
+  actions,
 }: {
   purchase: PurchaseDetail;
   canPay: boolean;
   timezone: string;
+  /** Correct / cancel buttons, for those allowed to. */
+  actions?: React.ReactNode;
 }) {
   const [paying, setPaying] = useState(false);
 
@@ -85,6 +92,7 @@ export function PurchaseDetailClient({
     dateStyle: "medium",
   });
   const fmtQty = new Intl.NumberFormat("en-NG", { maximumFractionDigits: 3 });
+  const fmtWhen = new Intl.DateTimeFormat("en-NG", { timeZone: timezone, dateStyle: "medium", timeStyle: "short" });
 
   const cancelled = p.status === "CANCELLED";
   const owing = p.balanceKobo > 0 && !cancelled;
@@ -165,7 +173,15 @@ export function PurchaseDetailClient({
               Invoice {p.invoiceNo}
             </span>
           )}
+          <span className="inline-flex items-center gap-1.5">
+            <UserRound className="size-4 text-ink-400" />
+            <span>
+              Entered by <span className="font-semibold text-ink-800">{p.enteredBy}</span>,{" "}
+              {fmtWhen.format(new Date(p.enteredAt))}
+            </span>
+          </span>
         </div>
+        {actions && <div className="mt-3 border-t border-hairline pt-3">{actions}</div>}
       </section>
 
       {/* ── Items ───────────────────────────────────────────────────────────── */}

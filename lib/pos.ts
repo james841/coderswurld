@@ -288,6 +288,12 @@ export const saleSubmitSchema = z.object({
   note: z.string().trim().max(500).nullish(),
   /** The till's wall-clock time of the sale — set when it was made offline. */
   soldAt: z.string().datetime().optional(),
+  /**
+   * Made while the till was offline and sent later. The money has already
+   * changed hands, so the server records it as it happened: a product deleted
+   * since, or stock another till sold meanwhile, must not reject a real sale.
+   */
+  queued: z.boolean().optional(),
 });
 
 export type SaleSubmit = z.infer<typeof saleSubmitSchema>;

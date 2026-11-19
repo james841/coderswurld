@@ -152,6 +152,7 @@ export async function PATCH(
         trackExpiry: true,
         expiryDate: true,
         isActive: true,
+        retiredBarcode: true,
       },
     });
     if (!existing) {
@@ -229,6 +230,26 @@ export async function PATCH(
         : undefined;
     if (activeToggle !== undefined) data.isActive = activeToggle;
 
+    // Deleting frees the barcode so another product can use it; restoring
+    // brings it back, unless another product has taken it in the meantime.
+    let barcodeNote: string | undefined;
+    if (activeToggle === false && existing.isActive && existing.barcode && parsed.barcode === undefined) {
+      data.barcode = null;
+      data.retiredBarcode = existing.barcode;
+    }
+    if (activeToggle === true && !existing.isActive && existing.retiredBarcode && !existing.barcode && parsed.barcode === undefined) {
+      const taker = await prisma.product.findFirst({
+        where: { organizationId: session.org.id, barcode: existing.retiredBarcode, id: { not: id } },
+        select: { name: true },
+      });
+      if (taker) {
+        barcodeNote = `Restored without its old barcode: ${taker.name} uses ${existing.retiredBarcode} now.`;
+      } else {
+        data.barcode = existing.retiredBarcode;
+      }
+      data.retiredBarcode = null;
+    }
+
     // Barcode uniqueness: cheap pre-check for a friendly message; the DB unique
     // index is the real guarantee and lib/api.ts turns its P2002 into the same
     // 409 if two edits race.
@@ -263,7 +284,7 @@ export async function PATCH(
 
     await writeEditAudit(session, id, existing, data);
 
-    return NextResponse.json({ ok: true, version });
+    return NextResponse.json({ ok: true, version, ...(barcodeNote ? { note: barcodeNote } : {}) });
   });
 }
 
@@ -291,7 +312,7 @@ export async function DELETE(
         // Limited to one department? The other department's products don't exist.
         ...(session.user.department ? { department: session.user.department } : {}),
       },
-      select: { id: true, name: true, sku: true, isActive: true },
+      select: { id: true, name: true, sku: true, isActive: true, barcode: true },
     });
     if (!product) {
       throw new AppError("That product doesn't exist.", { status: 404 });
@@ -311,7 +332,13 @@ export async function DELETE(
         // Limited to one department? The other department's products don't exist.
         ...(session.user.department ? { department: session.user.department } : {}),
       },
-        data: { isActive: false, version: nextVersion },
+        // Free the barcode: the product is gone from the shop, so the code can
+        // go on a new product. It is kept in retiredBarcode for a restore.
+        data: {
+          isActive: false,
+          version: nextVersion,
+          ...(product.barcode ? { barcode: null, retiredBarcode: product.barcode } : {}),
+        },
       });
     });
 

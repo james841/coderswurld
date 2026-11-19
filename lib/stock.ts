@@ -57,6 +57,8 @@ export interface MovementInput {
   batch?: { batchNo?: string | null; expiryDate?: Date | null; source?: string } | null;
   /** Stock leaving: take it from this batch only (writing off one batch). */
   fromBatchId?: string | null;
+  /** Stock arriving with no new batch: add it to this batch (a purchase correction). */
+  toBatchId?: string | null;
 }
 
 /**
@@ -197,7 +199,8 @@ async function syncBatches(
 
     if (m.quantity > 0) {
       // Returns and upward counts with no batch named: back onto the newest batch.
-      const newest = batches.reduce((a, b) => (b.receivedAt > a.receivedAt ? b : a));
+      const named = m.toBatchId ? batches.find((b) => b.id === m.toBatchId) : undefined;
+      const newest = named ?? batches.reduce((a, b) => (b.receivedAt > a.receivedAt ? b : a));
       await tx.stockBatch.update({
         where: { id: newest.id },
         data: { quantityLeft: { increment: m.quantity } },

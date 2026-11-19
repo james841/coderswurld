@@ -463,6 +463,9 @@ model Product {
   /// Nullable on purpose: bulk Excel imports land without barcodes and the shop
   /// attaches them later with a scanner. NULLs don't collide in a unique index.
   barcode     String?
+  /// The barcode a deleted product had. Deleting frees the barcode for another
+  /// product; restoring puts it back if nobody has taken it since.
+  retiredBarcode String?
   description String?
   unit        String  @default("pcs") // pcs | carton | kg | litre | bag | crate
   packSize    String? // "12 x 50cl"
@@ -743,6 +746,7 @@ model Purchase {
   items    PurchaseItem[]
   payments Payment[]
   receipts SupplierReceipt[]
+  changes  PurchaseChange[]
 
   @@unique([organizationId, reference])
   @@index([organizationId, supplierId, purchaseDate])
@@ -1120,4 +1124,27 @@ model EmailLog {
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// One correction to a purchase: who made it, why, and what changed (old and
+/// new values, in plain words). Admins and managers read these on the purchase
+/// page to trace a mistake back to the person and the moment.
+model PurchaseChange {
+  id             String   @id @default(cuid())
+  organizationId String
+  purchaseId     String
+  purchase       Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  /// EDIT | CANCEL
+  action   String
+  reason   String
+  /// JSON array of strings, one line per change.
+  details  String
+  userId   String?
+  userName String
+
+  createdAt DateTime @default(now())
+
+  @@index([purchaseId, createdAt])
+  @@index([organizationId, createdAt])
 }

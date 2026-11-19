@@ -52,7 +52,9 @@ export default async function PurchasesPage() {
         status: true,
         supplier: { select: { id: true, name: true } },
         branch: { select: { name: true, code: true } },
-        _count: { select: { items: true } },
+        createdAt: true,
+        createdBy: { select: { name: true } },
+        _count: { select: { items: true, changes: true } },
       },
     }),
     prisma.purchase.aggregate({
@@ -81,6 +83,9 @@ export default async function PurchasesPage() {
     branchName: p.branch.name,
     branchCode: p.branch.code,
     itemCount: p._count.items,
+    enteredBy: p.createdBy?.name ?? "Unknown",
+    enteredAt: p.createdAt.toISOString(),
+    corrections: p._count.changes,
   }));
 
   return (

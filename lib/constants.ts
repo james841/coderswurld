@@ -498,7 +498,8 @@ export type MovementType =
   | "TRANSFER_OUT"
   | "DAMAGE"
   | "EXPIRED"
-  | "RECOUNT";
+  | "RECOUNT"
+  | "PURCHASE_EDIT";
 
 export const MOVEMENT_LABELS: Record<MovementType, string> = {
   OPENING: "Opening stock",
@@ -511,6 +512,7 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
   DAMAGE: "Damaged",
   EXPIRED: "Expired / discarded",
   RECOUNT: "Stock recount",
+  PURCHASE_EDIT: "Purchase corrected",
 };
 
 export type NotificationType =

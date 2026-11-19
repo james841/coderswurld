@@ -116,7 +116,8 @@ export async function POST(request: Request) {
           status: 422,
         });
       }
-      if (!product.isActive) {
+      // A sale made offline before the product was deleted still happened.
+      if (!product.isActive && !data.queued) {
         throw new AppError(`${product.name} has been removed and can't be sold.`, {
           status: 422,
         });
@@ -310,7 +311,10 @@ export async function POST(request: Request) {
             userId: session.user.id,
           },
           {
-            allowNegative: allowNegativeStock,
+            // An offline sale already left the shop with the customer. If other
+            // tills sold the same stock meanwhile, the level goes below zero and
+            // shows up for a recount, rather than the sale being refused.
+            allowNegative: allowNegativeStock || data.queued === true,
             onExpiredTaken: (q) => expiredSold.push({ id: l.product.id, name: l.product.name, qty: q }),
           },
         );

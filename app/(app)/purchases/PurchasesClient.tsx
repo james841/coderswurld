@@ -21,9 +21,14 @@ export interface PurchaseListRow {
   branchName: string;
   branchCode: string;
   itemCount: number;
+  /** Who typed it in, and when (not the delivery date, which can be backdated). */
+  enteredBy: string;
+  enteredAt: string;
+  /** How many times it has been corrected since. */
+  corrections: number;
 }
 
-type StatusFilter = "all" | "owing" | "paid";
+type StatusFilter = "all" | "owing" | "paid" | "corrected";
 
 export function PurchasesClient({
   initial,
@@ -38,6 +43,12 @@ export function PurchasesClient({
 }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [person, setPerson] = useState("");
+  const people = useMemo(() => [...new Set(initial.map((p) => p.enteredBy))].sort(), [initial]);
+  const fmtWhen = useMemo(
+    () => new Intl.DateTimeFormat("en-NG", { timeZone: timezone, dateStyle: "medium", timeStyle: "short" }),
+    [timezone],
+  );
 
   const fmtDate = useMemo(
     () => new Intl.DateTimeFormat("en-NG", { timeZone: timezone, dateStyle: "medium" }),
@@ -48,7 +59,8 @@ export function PurchasesClient({
     () => ({
       all: initial.length,
       owing: initial.filter((p) => p.balanceKobo > 0).length,
-      paid: initial.filter((p) => p.balanceKobo <= 0).length,
+      paid: initial.filter((p) => p.balanceKobo <= 0 && p.status !== "CANCELLED").length,
+      corrected: initial.filter((p) => p.corrections > 0 || p.status === "CANCELLED").length,
     }),
     [initial],
   );
@@ -57,15 +69,18 @@ export function PurchasesClient({
     const q = search.trim().toLowerCase();
     return initial.filter((p) => {
       if (status === "owing" && p.balanceKobo <= 0) return false;
-      if (status === "paid" && p.balanceKobo > 0) return false;
+      if (status === "paid" && (p.balanceKobo > 0 || p.status === "CANCELLED")) return false;
+      if (status === "corrected" && p.corrections === 0 && p.status !== "CANCELLED") return false;
+      if (person && p.enteredBy !== person) return false;
       if (!q) return true;
       return (
         p.reference.toLowerCase().includes(q) ||
         p.supplierName.toLowerCase().includes(q) ||
+        p.enteredBy.toLowerCase().includes(q) ||
         (p.invoiceNo?.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [initial, search, status]);
+  }, [initial, search, status, person]);
 
   return (
     <div className="space-y-4">
@@ -75,7 +90,7 @@ export function PurchasesClient({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search PO number, supplier or invoice"
+            placeholder="Search PO number, supplier, invoice or who entered it"
             className="input h-10 w-full pl-9"
             aria-label="Search purchases"
           />
@@ -93,6 +108,27 @@ export function PurchasesClient({
         <FilterChip label="All" count={counts.all} active={status === "all"} onClick={() => setStatus("all")} />
         <FilterChip label="Owing" count={counts.owing} active={status === "owing"} onClick={() => setStatus("owing")} />
         <FilterChip label="Paid" count={counts.paid} active={status === "paid"} onClick={() => setStatus("paid")} />
+        <FilterChip
+          label="Corrected"
+          count={counts.corrected}
+          active={status === "corrected"}
+          onClick={() => setStatus("corrected")}
+        />
+        {people.length > 1 && (
+          <select
+            value={person}
+            onChange={(e) => setPerson(e.target.value)}
+            className="input h-9 w-auto py-0 text-sm sm:ml-auto"
+            aria-label="Entered by"
+          >
+            <option value="">Entered by anyone</option>
+            {people.map((name) => (
+              <option key={name} value={name}>
+                Entered by {name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -111,6 +147,7 @@ export function PurchasesClient({
                   <th>PO / supplier</th>
                   {multiBranch && <th>Branch</th>}
                   <th>Date</th>
+                  <th>Entered by</th>
                   <th data-numeric>Items</th>
                   <th data-numeric>Total</th>
                   <th>Payment</th>
@@ -127,9 +164,17 @@ export function PurchasesClient({
                     </td>
                     {multiBranch && <td className="text-ink-600">{p.branchCode}</td>}
                     <td className="whitespace-nowrap text-ink-600">{fmtDate.format(new Date(p.purchaseDate))}</td>
+                    <td className="text-ink-600">
+                      <span className="block font-medium text-ink-800">{p.enteredBy}</span>
+                      <span className="block text-xs text-ink-400">{fmtWhen.format(new Date(p.enteredAt))}</span>
+                    </td>
                     <td data-numeric className="text-ink-600">{p.itemCount}</td>
                     <td data-numeric className="font-semibold text-ink-900">{formatNaira(p.totalKobo)}</td>
-                    <td><PaymentBadge status={p.paymentStatus} balanceKobo={p.balanceKobo} /></td>
+                    <td>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <StatusBadges p={p} />
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -143,11 +188,12 @@ export function PurchasesClient({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-ink-950">{p.reference}</span>
-                      <PaymentBadge status={p.paymentStatus} balanceKobo={p.balanceKobo} />
+                      <StatusBadges p={p} />
                     </div>
                     <span className="block truncate text-sm text-ink-600">{p.supplierName}</span>
                     <span className="block text-xs text-ink-400">
-                      {fmtDate.format(new Date(p.purchaseDate))} · {p.itemCount} item{p.itemCount === 1 ? "" : "s"}
+                      {fmtDate.format(new Date(p.purchaseDate))} · {p.itemCount} item{p.itemCount === 1 ? "" : "s"} · by{" "}
+                      {p.enteredBy}
                     </span>
                   </div>
                   <div className="text-right">
@@ -180,6 +226,18 @@ function FilterChip({
       {label}
       <span className="chip-count">{count}</span>
     </button>
+  );
+}
+
+function StatusBadges({ p }: { p: PurchaseListRow }) {
+  if (p.status === "CANCELLED") return <span className="badge badge-neutral">Cancelled</span>;
+  return (
+    <>
+      <PaymentBadge status={p.paymentStatus} balanceKobo={p.balanceKobo} />
+      {p.corrections > 0 && (
+        <span className="badge badge-info">Corrected{p.corrections > 1 ? ` ×${p.corrections}` : ""}</span>
+      )}
+    </>
   );
 }
 

@@ -39,11 +39,18 @@ import {
   getDeviceId,
   getPosDb,
   listQueued,
+  listStuck,
   loadCatalog,
+  markStuck,
   queueCount,
+  retryStuck,
   runSync,
+  type QueuedSale,
   type StoredProduct,
 } from "./catalog";
+
+/** The server said 401: the sign-in has expired. Saved sales wait for the next one. */
+class SignInNeeded extends Error {}
 import PayDialog, { type PayPayload } from "./PayDialog";
 import Receipt, { type ReceiptData } from "./Receipt";
 
@@ -187,6 +194,9 @@ export default function Till({
   const [syncing, setSyncing] = useState(false);
   const [online, setOnline] = useState(true);
   const [queuedCount, setQueuedCount] = useState(0);
+  /** Offline sales the server refused; kept on this device until retried. */
+  const [stuck, setStuck] = useState<QueuedSale[]>([]);
+  const [signInNeeded, setSignInNeeded] = useState(false);
 
   // Sale in progress.
   const [search, setSearch] = useState("");
@@ -308,6 +318,13 @@ export default function Till({
 
         const pending = await queueCount(db);
         if (!cancelled) setQueuedCount(pending);
+        const setAside = await listStuck(db);
+        if (!cancelled) setStuck(setAside);
+
+        // Ask the browser to keep this till's data (products, unsent sales)
+        // for good. Without it, Chrome may clear site data to free disk space,
+        // which is a real risk over weeks offline. Silently ignored if refused.
+        void navigator.storage?.persist?.().catch(() => false);
 
         await runSync(db, deviceIdRef.current, pending);
         const fresh = await loadCatalog(db);
@@ -361,30 +378,42 @@ export default function Till({
       const queued = await listQueued(db);
       for (const item of queued) {
         try {
+          // Mark it as an offline sale so the server records it as it happened.
+          let body = item.body;
+          try {
+            body = JSON.stringify({ ...JSON.parse(item.body), queued: true });
+          } catch {
+            /* send as stored */
+          }
           const res = await fetch("/api/pos/sales", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: item.body,
+            body,
           });
           if (res.ok) {
             const data = (await res.json()) as SaleResult;
             await applyStockDeltas(db, data.stock);
             await dropQueued(db, item.localId);
-          } else if (
-            res.status === 409 ||
-            res.status === 422 ||
-            res.status === 403
-          ) {
-            // 409 = already recorded; 422/403 = will never succeed on retry.
-            // Either way, stop it wedging the queue behind it.
+          } else if (res.status === 409) {
+            // Already recorded on the server: safe to let go.
             await dropQueued(db, item.localId);
+          } else if (res.status === 401) {
+            // Signed out (sign-ins last 12 hours). Keep everything and say so.
+            throw new SignInNeeded();
+          } else if (res.status >= 400 && res.status < 500) {
+            // Refused for a reason a retry won't fix. NEVER delete it: the
+            // money was taken. Set it aside, tell the cashier, carry on.
+            const data = (await res.json().catch(() => null)) as { error?: string } | null;
+            await markStuck(db, item.localId, data?.error ?? `Refused (${res.status})`);
           } else {
             break; // server trouble — try the whole queue again next tick
           }
-        } catch {
+        } catch (error) {
+          if (error instanceof SignInNeeded) throw error;
           break; // still offline
         }
       }
+      setStuck(await listStuck(db));
     };
 
     const tick = async () => {
@@ -404,10 +433,14 @@ export default function Till({
         if (!stopped) {
           setQueuedCount(pending);
           setSyncError(null);
+          setSignInNeeded(false);
         }
       } catch (error) {
         if (!stopped) {
-          setSyncError(error instanceof Error ? error.message : "Sync failed.");
+          const signedOut = error instanceof SignInNeeded || (error instanceof Error && error.message.includes("(401)"));
+          setSignInNeeded(signedOut);
+          setQueuedCount(await queueCount(db));
+          setSyncError(signedOut ? "Sign in again to send saved sales." : error instanceof Error ? error.message : "Sync failed.");
         }
       } finally {
         if (!stopped) setSyncing(false);
@@ -1090,6 +1123,43 @@ export default function Till({
             </button>
           </div>
         </header>
+
+        {(stuck.length > 0 || signInNeeded) && (
+          <div className="shrink-0 space-y-1 border-b border-warn-200 bg-warn-50 px-3 py-2 text-sm text-warn-700 sm:px-4">
+            {signInNeeded && queuedCount > 0 && (
+              <p className="font-semibold">
+                Your sign-in has expired. {queuedCount} sale{queuedCount === 1 ? " is" : "s are"} saved on this device
+                and will be sent as soon as you sign in again. Keep selling; nothing is lost.
+              </p>
+            )}
+            {stuck.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="min-w-0 flex-1">
+                  <span className="font-semibold">
+                    {stuck.length} offline sale{stuck.length === 1 ? "" : "s"} couldn&apos;t be sent.
+                  </span>{" "}
+                  {stuck[0].stuck}
+                  {stuck.length > 1 ? " (and others)" : ""} They are kept safe on this device. Ask a manager to fix
+                  this, then try again.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline shrink-0"
+                  onClick={async () => {
+                    const db = dbRef.current;
+                    if (!db) return;
+                    await retryStuck(db);
+                    setStuck([]);
+                    setQueuedCount(await queueCount(db));
+                    window.dispatchEvent(new Event("online"));
+                  }}
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Customers being served ──────────────────────────────────────────── */}
         <div className="flex shrink-0 items-center gap-2 border-b border-hairline bg-surface px-3 py-2 sm:px-4">

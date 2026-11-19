@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { AppError, handle } from "@/lib/api";
+import { z } from "zod";
+
+import { AppError, handle, readJson } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { requireTenantApi } from "@/lib/auth";
 import { requirePermission } from "@/lib/permissions";
 import { PERMISSIONS } from "@/lib/constants";
+import { cancelPurchase, correctPurchase } from "@/lib/purchaseEdit";
 
 /**
  * GET /api/purchases/[id] — one delivery in full: its lines, what each cost,
@@ -102,5 +105,107 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         })),
       },
     });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/purchases/[id] — correct a mistake, or cancel the whole purchase.
+// Admins and managers (purchases.manage). A reason is always required: it is
+// what the next person reads in the purchase's history.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_KOBO = 2_000_000_000;
+const emptyToNull = (v: unknown) => (v === "" || v === null || v === undefined ? null : v);
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullish()
+    .transform((v) => v || null);
+
+const Reason = z.string().trim().min(3, "Say what was wrong, in a few words.").max(300);
+
+const CorrectSchema = z.object({
+  action: z.literal("correct"),
+  reason: Reason,
+  supplierId: z.string().min(1, "Choose who you bought from."),
+  invoiceNo: optionalText(60),
+  purchaseDate: z.coerce.date(),
+  transportKobo: z.number().int().min(0).max(MAX_KOBO),
+  otherCostKobo: z.number().int().min(0).max(MAX_KOBO),
+  note: optionalText(2000),
+  lines: z
+    .array(
+      z.object({
+        id: z.string().nullish(),
+        productId: z.string().min(1),
+        quantity: z.number().positive("Quantity must be more than zero.").max(1_000_000, "That quantity looks wrong."),
+        unitCostKobo: z.number().int().min(0, "Cost can't be negative.").max(MAX_KOBO),
+        batchNo: optionalText(60),
+        expiryDate: z.preprocess(emptyToNull, z.coerce.date().nullable()),
+      }),
+    )
+    .min(1, "Keep at least one item. To remove the whole purchase, cancel it instead."),
+});
+
+const CancelSchema = z.object({ action: z.literal("cancel"), reason: Reason });
+
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  return handle(async () => {
+    const session = await requireTenantApi();
+    requirePermission(session.user, PERMISSIONS.PURCHASES_MANAGE);
+    const { id } = await params;
+    const body = await readJson(request);
+    const parsed = z.discriminatedUnion("action", [CorrectSchema, CancelSchema]).safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new AppError(issue?.message ?? "Check the details.", {
+        status: 422,
+        fields: issue?.path?.length ? { [String(issue.path[0])]: issue.message } : undefined,
+      });
+    }
+    const actor = { organizationId: session.org.id, userId: session.user.id, userName: session.user.name };
+    const input = parsed.data;
+
+    const result = await prisma.$transaction(
+      (tx) =>
+        input.action === "cancel"
+          ? cancelPurchase(tx, actor, id, input.reason)
+          : correctPurchase(tx, actor, id, {
+              reason: input.reason,
+              supplierId: input.supplierId,
+              invoiceNo: input.invoiceNo,
+              purchaseDate: input.purchaseDate,
+              transportKobo: input.transportKobo,
+              otherCostKobo: input.otherCostKobo,
+              note: input.note,
+              lines: input.lines.map((l) => ({
+                id: l.id ?? null,
+                productId: l.productId,
+                quantity: l.quantity,
+                unitCostKobo: l.unitCostKobo,
+                batchNo: l.batchNo,
+                expiryDate: l.expiryDate,
+              })),
+            }),
+      { timeout: 20_000 },
+    );
+
+    await prisma.auditLog
+      .create({
+        data: {
+          organizationId: session.org.id,
+          userId: session.user.id,
+          userName: session.user.name,
+          action: input.action === "cancel" ? "PURCHASE_CANCELLED" : "PURCHASE_CORRECTED",
+          entity: "Purchase",
+          entityId: id,
+          summary: `${input.action === "cancel" ? "Cancelled" : "Corrected"} a purchase: ${input.reason}`,
+        },
+      })
+      .catch((error) => console.error("[purchases/[id]] audit write failed:", error));
+
+    return NextResponse.json({ ok: true, changes: result.changes });
   });
 }

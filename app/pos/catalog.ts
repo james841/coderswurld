@@ -36,6 +36,13 @@ export interface QueuedSale {
   localId: string;
   body: string;
   createdAt: number;
+  /**
+   * Set when the server refused this sale for a reason a retry won't fix
+   * (a permission, a missing customer). The sale is KEPT on the device, never
+   * thrown away: real money was taken. It is shown to the cashier and can be
+   * retried after a manager fixes the cause.
+   */
+  stuck?: string;
 }
 
 class PosDexie extends Dexie {
@@ -207,12 +214,28 @@ export async function enqueueSale(db: PosDexie, localId: string, body: string): 
   await db.queue.put({ localId, body, createdAt: Date.now() });
 }
 
+/** Sales still waiting to be sent (not counting stuck ones). */
 export async function queueCount(db: PosDexie): Promise<number> {
-  return db.queue.count();
+  return db.queue.filter((q) => !q.stuck).count();
 }
 
+/** Waiting sales, oldest first. Stuck ones are left out until retried. */
 export async function listQueued(db: PosDexie): Promise<QueuedSale[]> {
-  return db.queue.orderBy("createdAt").toArray();
+  return (await db.queue.orderBy("createdAt").toArray()).filter((q) => !q.stuck);
+}
+
+export async function listStuck(db: PosDexie): Promise<QueuedSale[]> {
+  return (await db.queue.orderBy("createdAt").toArray()).filter((q) => Boolean(q.stuck));
+}
+
+export async function markStuck(db: PosDexie, localId: string, reason: string): Promise<void> {
+  await db.queue.update(localId, { stuck: reason });
+}
+
+/** Put every stuck sale back in line to be sent. */
+export async function retryStuck(db: PosDexie): Promise<void> {
+  const stuck = await listStuck(db);
+  await Promise.all(stuck.map((q) => db.queue.update(q.localId, { stuck: undefined })));
 }
 
 export async function dropQueued(db: PosDexie, localId: string): Promise<void> {
