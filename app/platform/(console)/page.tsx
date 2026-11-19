@@ -42,7 +42,7 @@ export default async function PlatformOverviewPage() {
     recentLeads,
     lapsing,
   ] = await Promise.all([
-    prisma.lead.count({ where: { status: { in: ["NEW", "CONTACTED", "INVOICED", "PAID"] } } }),
+    prisma.lead.count({ where: { status: { in: ["NEW", "CONTACTED", "INVOICED", "CLAIMED", "PAID"] } } }),
     prisma.organization.count({ where: { status: "ACTIVE" } }),
     prisma.organization.count({ where: { status: { in: ["PENDING", "SUSPENDED", "EXPIRED"] } } }),
     prisma.subscription.count({

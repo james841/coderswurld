@@ -111,7 +111,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/platform/le
             kind of friction that turns a two-minute follow-up into tomorrow's. */}
         <div className="mt-4 flex flex-wrap gap-2 border-t border-hairline pt-4">
           <a
-            href={`mailto:${lead.email}?subject=${encodeURIComponent(`[${lead.reference}] ${plan.name} plan — ${lead.companyName}`)}`}
+            href={`mailto:${lead.email}?subject=${encodeURIComponent(`[${lead.reference}] ${plan.name} plan, ${lead.companyName}`)}`}
             className="btn btn-outline btn-sm"
           >
             <Mail className="size-4" />
@@ -134,6 +134,50 @@ export default async function LeadDetailPage({ params }: PageProps<"/platform/le
           ) : null}
         </div>
       </header>
+
+      {/* ── What the customer reported when they tapped "I've paid" ──────── */}
+      {lead.paymentClaimedAt ? (
+        <section className="card card-pad border-brand-200 bg-brand-50/60">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-brand-800">Customer says they&apos;ve paid</p>
+              <p className="mt-1 text-sm text-ink-700">
+                Reported {relativeDays(lead.paymentClaimedAt, now)}. Check your bank for this transfer, then mark it paid
+                and create their account below.
+              </p>
+            </div>
+            <p className="tabular text-2xl font-bold text-ink-950">
+              {lead.paymentAmountKobo !== null ? formatNaira(lead.paymentAmountKobo) : "—"}
+            </p>
+          </div>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">Name on transfer</dt>
+              <dd className="font-semibold text-ink-950">{lead.paymentSenderName ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">Date paid</dt>
+              <dd className="font-semibold text-ink-950">
+                {lead.paymentPaidOn
+                  ? lead.paymentPaidOn.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
+                  : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">From bank</dt>
+              <dd className="font-semibold text-ink-950">{lead.paymentBank ?? "—"}</dd>
+            </div>
+          </dl>
+          {lead.paymentAmountKobo !== null && lead.paymentAmountKobo < lead.quotedKobo ? (
+            <p className="mt-3 rounded-lg bg-sell-50 px-3 py-2 text-sm font-semibold text-sell-700">
+              This is less than the quoted {formatNaira(lead.quotedKobo)}.
+            </p>
+          ) : null}
+          {lead.paymentNote ? (
+            <p className="mt-3 rounded-lg bg-white px-3 py-2 text-sm text-ink-700 ring-1 ring-hairline">“{lead.paymentNote}”</p>
+          ) : null}
+        </section>
+      ) : null}
 
       {/* ── Already live ──────────────────────────────────────────────────── */}
       {provisioned && lead.organization ? (
@@ -186,7 +230,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/platform/le
                 <p className="mt-0.5 text-xs text-ink-500">
                   {paid
                     ? "Payment is recorded. Creating the account sends the main admin their login."
-                    : "Available once payment is recorded — mark them paid above, or expand anyway if you're taking payment now."}
+                    : "Available once payment is recorded. Mark them paid above, or expand anyway if you're taking payment now."}
                 </p>
               </header>
               <div className="p-4">
@@ -327,7 +371,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/platform/le
             </ul>
             {lead.quotedKobo !== plan.priceKobo ? (
               <p className="hint">
-                Quoted {formatNaira(lead.quotedKobo)} — {lead.quotedKobo < plan.priceKobo ? "discounted" : "above"} list
+                Quoted {formatNaira(lead.quotedKobo)}, {lead.quotedKobo < plan.priceKobo ? "discounted" : "above"} list
                 price.
               </p>
             ) : null}

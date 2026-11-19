@@ -15,6 +15,7 @@ const TABS = [
   { key: "NEW", label: "New" },
   { key: "CONTACTED", label: "Contacted" },
   { key: "INVOICED", label: "Invoiced" },
+  { key: "CLAIMED", label: "Says paid" },
   { key: "PAID", label: "Paid" },
   { key: "PROVISIONED", label: "Live" },
   { key: "REJECTED", label: "Rejected" },
@@ -38,7 +39,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/platform/l
 
   const where: Prisma.LeadWhereInput = {};
   if (tab === "OPEN") {
-    where.status = { in: ["NEW", "CONTACTED", "INVOICED", "PAID"] };
+    where.status = { in: ["NEW", "CONTACTED", "INVOICED", "CLAIMED", "PAID"] };
   } else if (tab !== "ALL") {
     where.status = tab;
   }
@@ -84,6 +85,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/platform/l
     (countByStatus.get("NEW") ?? 0) +
     (countByStatus.get("CONTACTED") ?? 0) +
     (countByStatus.get("INVOICED") ?? 0) +
+    (countByStatus.get("CLAIMED") ?? 0) +
     (countByStatus.get("PAID") ?? 0);
   const totalAll = counts.reduce((sum, c) => sum + c._count._all, 0);
 

@@ -4,8 +4,7 @@ import { z } from "zod";
 import { AppError, handle, readJson } from "@/lib/api";
 import { requirePlatformApi } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { emailShell, emailTable, escapeHtml, sendMail } from "@/lib/mail";
-import { formatNaira } from "@/lib/money";
+import { sendPaymentInstructions } from "@/lib/leadEmails";
 import { getPlan } from "@/lib/constants";
 
 /**
@@ -24,7 +23,7 @@ import { getPlan } from "@/lib/constants";
  */
 
 const PatchSchema = z.object({
-  status: z.enum(["NEW", "CONTACTED", "INVOICED", "PAID", "REJECTED"]).optional(),
+  status: z.enum(["NEW", "CONTACTED", "INVOICED", "CLAIMED", "PAID", "REJECTED"]).optional(),
   notes: z.string().trim().max(4000).optional(),
   /** Override the quoted amount — discounts and multi-year deals get negotiated. */
   quotedKobo: z.coerce.number().int().min(0).max(1_000_000_000).optional(),
@@ -114,83 +113,20 @@ export async function PATCH(request: Request, context: RouteContext<"/api/platfo
 
     // Fire-and-forget, after the write. A mail failure must not roll back a
     // status the operator can see they clicked.
+    let emailed: boolean | undefined;
+    let emailError: string | undefined;
     if (payload.sendInvoiceEmail && updated.status === "INVOICED") {
-      await sendInvoiceEmail({
-        reference: lead.reference,
-        companyName: lead.companyName,
-        contactName: lead.contactName,
-        email: lead.email,
-        plan: updated.plan,
-        amountKobo: updated.quotedKobo,
-      }).catch((error) => {
-        console.error("[platform/leads] invoice email failed:", error);
-      });
+      const full = await prisma.lead.findUnique({ where: { id } });
+      if (full) {
+        const result = await sendPaymentInstructions({ ...full, plan: updated.plan, quotedKobo: updated.quotedKobo }).catch(
+          (error: unknown) => ({ delivered: false, reason: error instanceof Error ? error.message : "Email failed" }),
+        );
+        emailed = result.delivered;
+        if (!result.delivered) emailError = "reason" in result ? result.reason : undefined;
+      }
     }
 
-    return NextResponse.json({ ok: true, lead: updated });
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * The payment-instructions email.
- *
- * Bank details come from the environment rather than the database because they
- * are the operator's own account, not per-tenant data, and putting them in a
- * settings table would invite someone to edit them through a web form — which is
- * exactly the field an attacker with a stolen console session would change
- * first.
- */
-async function sendInvoiceEmail(params: {
-  reference: string;
-  companyName: string;
-  contactName: string;
-  email: string;
-  plan: string;
-  amountKobo: number;
-}) {
-  const plan = getPlan(params.plan);
-  const bankName = process.env.PAYMENT_BANK_NAME?.trim();
-  const accountName = process.env.PAYMENT_ACCOUNT_NAME?.trim();
-  const accountNumber = process.env.PAYMENT_ACCOUNT_NUMBER?.trim();
-
-  const rows: Array<[string, string]> = [
-    ["Reference", `<span style="font-family:monospace;">${escapeHtml(params.reference)}</span>`],
-    ["Business", escapeHtml(params.companyName)],
-    ["Plan", `${escapeHtml(plan.name)} — one year`],
-    ["Amount due", `<strong>${formatNaira(params.amountKobo)}</strong>`],
-  ];
-  if (bankName) rows.push(["Bank", escapeHtml(bankName)]);
-  if (accountName) rows.push(["Account name", escapeHtml(accountName)]);
-  if (accountNumber) {
-    rows.push([
-      "Account number",
-      `<span style="font-family:monospace;font-size:16px;letter-spacing:1px;">${escapeHtml(accountNumber)}</span>`,
-    ]);
-  }
-
-  const body = `
-<p style="margin:0 0 16px;">Hello ${escapeHtml(params.contactName.split(" ")[0])},</p>
-<p style="margin:0 0 16px;">Here are the details to activate <strong>${escapeHtml(params.companyName)}</strong> on the ${escapeHtml(plan.name)} plan. This is a single payment for twelve months — there is no monthly charge.</p>
-${emailTable(rows)}
-${
-  accountNumber
-    ? `<p style="margin:0 0 16px;">Please use <strong>${escapeHtml(params.reference)}</strong> as the transfer narration so we can match your payment straight away.</p>`
-    : `<p style="margin:0 0 16px;">Reply to this email and we'll send you our bank details.</p>`
-}
-<p style="margin:0 0 8px;font-weight:600;color:#0a0a0a;">After you pay</p>
-<p style="margin:0 0 16px;">Send us the transfer receipt by replying here or on WhatsApp. We activate your account and email your main admin login — usually within a few hours on a working day.</p>
-<p style="margin:0;">&mdash; The Coderswurld team</p>`;
-
-  await sendMail({
-    to: params.email,
-    subject: `Invoice for your ${plan.name} plan — ${params.reference}`,
-    html: emailShell({
-      heading: `${formatNaira(params.amountKobo)} to activate`,
-      preheader: `${plan.name} plan, one year. Reference ${params.reference}.`,
-      body,
-      footer: `Quote ${escapeHtml(params.reference)} on any reply and we'll find you instantly.`,
-    }),
+    // Tell the console whether the email really went, rather than assuming.
+    return NextResponse.json({ ok: true, lead: updated, emailed, emailError });
   });
 }

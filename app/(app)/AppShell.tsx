@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ChangeConfirm } from "@/components/ChangeConfirm";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -311,6 +312,7 @@ export function AppShell({
   return (
     <div data-theme={theme} className="min-h-dvh bg-canvas text-ink-900 transition-colors duration-300">
       {/* Saves the till for offline use in the background, for anyone who sells. */}
+      <ChangeConfirm />
       <OfflineReady warmTill={canSell} />
       {/* Desktop: a column that doesn't scroll with the page. */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 lg:block">{sidebar}</aside>

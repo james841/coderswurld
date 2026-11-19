@@ -3,14 +3,12 @@ import { z } from "zod";
 
 import { handle, readJson } from "@/lib/api";
 import { prisma } from "@/lib/db";
-import { emailShell, emailTable, escapeHtml, sendMail } from "@/lib/mail";
+import { sendNewRequestAlert, sendPaymentInstructions } from "@/lib/leadEmails";
+import { paymentDetails } from "@/lib/payment";
 import { nextLeadReference } from "@/lib/sequence";
-import { formatNaira } from "@/lib/money";
 import {
   BUSINESS_TYPES,
-  BUSINESS_TYPE_LABELS,
   NIGERIAN_STATES,
-  PLANS,
   getPlan,
 } from "@/lib/constants";
 
@@ -118,97 +116,27 @@ export async function POST(request: Request) {
       select: { id: true, reference: true },
     });
 
-    // ── Notifications. Never allowed to fail the request. ───────────────────
-    await Promise.allSettled([
-      notifyOperator({ ...payload, reference: lead.reference, planName: plan.name, planPriceKobo: plan.priceKobo }),
-      confirmToProspect({ ...payload, reference: lead.reference, planName: plan.name, planPriceKobo: plan.priceKobo }),
+    // ── Emails. Never allowed to fail the request. ────────────────────────
+    // With bank details set, the customer gets them straight away and the
+    // request moves to Invoiced, so you're not the bottleneck at 2am.
+    const forEmail = {
+      ...payload,
+      id: lead.id,
+      reference: lead.reference,
+      plan: plan.id,
+      quotedKobo: plan.priceKobo,
+      notes: nullIfBlank(payload.notes),
+    };
+    const [toCustomer] = await Promise.allSettled([
+      sendPaymentInstructions(forEmail),
+      sendNewRequestAlert(forEmail),
     ]);
+    if (paymentDetails() && toCustomer.status === "fulfilled" && toCustomer.value.delivered) {
+      await prisma.lead
+        .update({ where: { id: lead.id }, data: { status: "INVOICED", invoicedAt: new Date() } })
+        .catch(() => undefined);
+    }
 
     return NextResponse.json({ ok: true, reference: lead.reference });
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-type NotificationPayload = z.infer<typeof LeadSchema> & {
-  reference: string;
-  planName: string;
-  planPriceKobo: number;
-};
-
-async function notifyOperator(lead: NotificationPayload) {
-  const to =
-    process.env.SALES_NOTIFICATION_EMAIL?.trim() ||
-    process.env.PLATFORM_ADMIN_EMAIL?.trim();
-  if (!to) return;
-
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
-  const body = `
-<p style="margin:0 0 16px;">A business has requested the <strong>${escapeHtml(lead.planName)}</strong> plan.</p>
-${emailTable([
-  ["Reference", `<span style="font-family:monospace;">${escapeHtml(lead.reference)}</span>`],
-  ["Business", escapeHtml(lead.companyName)],
-  ["Type", escapeHtml(BUSINESS_TYPE_LABELS[lead.businessType] ?? lead.businessType)],
-  ["Plan", `${escapeHtml(lead.planName)} — ${formatNaira(lead.planPriceKobo)}/year`],
-  ["Contact", `${escapeHtml(lead.contactName)}${lead.contactRole ? ` (${escapeHtml(lead.contactRole)})` : ""}`],
-  ["Email", `<a href="mailto:${escapeHtml(lead.email)}" style="color:#c2410c;">${escapeHtml(lead.email)}</a>`],
-  ["Phone", `<a href="tel:${escapeHtml(lead.phone)}" style="color:#c2410c;">${escapeHtml(lead.phone)}</a>`],
-  ["Location", escapeHtml([lead.city, lead.state].filter(Boolean).join(", ") || "—")],
-  ["Size", `${lead.branchCount} branch${lead.branchCount === 1 ? "" : "es"}, ${lead.staffCount} staff`],
-])}
-${
-  lead.notes
-    ? `<p style="margin:0 0 6px;font-size:12px;color:#6a6a6a;">Their note</p>
-<p style="margin:0 0 16px;padding:12px;background:#f7f7f8;border-left:3px solid #c2410c;border-radius:0 6px 6px 0;white-space:pre-wrap;">${escapeHtml(lead.notes)}</p>`
-    : ""
-}
-<p style="margin:16px 0 0;">
-  <a href="${escapeHtml(appUrl)}/platform/leads" style="display:inline-block;padding:11px 20px;background:#c2410c;border-radius:8px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">Open in dashboard</a>
-</p>`;
-
-  await sendMail({
-    to,
-    // The reference in the subject keeps the whole thread threaded in Gmail.
-    subject: `[${lead.reference}] ${lead.planName} plan request — ${lead.companyName}`,
-    replyTo: lead.email,
-    html: emailShell({
-      heading: `New ${lead.planName} plan request`,
-      preheader: `${lead.companyName} — ${formatNaira(lead.planPriceKobo)}/year`,
-      body,
-      footer: `Reply to this email to reach ${escapeHtml(lead.contactName)} directly.`,
-    }),
-  });
-}
-
-async function confirmToProspect(lead: NotificationPayload) {
-  const plan = PLANS[lead.plan];
-
-  const body = `
-<p style="margin:0 0 16px;">Hello ${escapeHtml(lead.contactName.split(" ")[0])},</p>
-<p style="margin:0 0 16px;">Thank you for choosing Coderswurld Inventory for <strong>${escapeHtml(lead.companyName)}</strong>. We have your request and we're preparing your invoice now.</p>
-${emailTable([
-  ["Your reference", `<span style="font-family:monospace;">${escapeHtml(lead.reference)}</span>`],
-  ["Plan", escapeHtml(plan.name)],
-  ["Amount", `${formatNaira(plan.priceKobo)} for one year`],
-])}
-<p style="margin:0 0 8px;font-weight:600;color:#0a0a0a;">What happens next</p>
-<ol style="margin:0 0 16px;padding-left:20px;">
-  <li style="margin-bottom:6px;">We reply to this email with our bank details and the total.</li>
-  <li style="margin-bottom:6px;">You make one transfer for the year.</li>
-  <li style="margin-bottom:6px;">We activate your account and send your main admin login — usually the same day.</li>
-</ol>
-<p style="margin:0 0 16px;">There is nothing to pay yet and we never ask for card details. If anything in your request needs changing, just reply to this email and quote <strong>${escapeHtml(lead.reference)}</strong>.</p>
-<p style="margin:0;">&mdash; The Coderswurld team</p>`;
-
-  await sendMail({
-    to: lead.email,
-    subject: `Your ${plan.name} plan request — ${lead.reference}`,
-    html: emailShell({
-      heading: "We've got your request",
-      preheader: `Reference ${lead.reference}. We'll send your invoice shortly.`,
-      body,
-      footer: "You're receiving this because you requested a plan at Coderswurld Inventory.",
-    }),
   });
 }

@@ -87,10 +87,20 @@ model Lead {
   currency      String @default("NGN")
 
   // your pipeline
-  status       String    @default("NEW") // NEW | CONTACTED | INVOICED | PAID | PROVISIONED | REJECTED
+  // NEW | CONTACTED | INVOICED | CLAIMED (customer says they paid) | PAID | PROVISIONED | REJECTED
+  status       String    @default("NEW")
   notes        String?
   invoicedAt   DateTime?
   paidAt       DateTime?
+
+  // What the customer told us when they pressed "I've paid". Checked against
+  // the bank statement before anything is approved.
+  paymentClaimedAt  DateTime?
+  paymentSenderName String?
+  paymentAmountKobo Int?
+  paymentPaidOn     DateTime?
+  paymentBank       String?
+  paymentNote       String?
   rejectedAt   DateTime?
   source       String    @default("LANDING_PAGE")
   ipAddress    String?

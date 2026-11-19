@@ -23,7 +23,7 @@
  * not part of the app bundle.
  */
 
-const VERSION = "v2";
+const VERSION = "v3"; // v3: new logo icons
 const STATIC_CACHE = `cw-static-${VERSION}`; // hashed build files: safe forever
 const PAGES_CACHE = `cw-pages-${VERSION}`; // the till's HTML: one entry
 const TILL_PATH = "/pos";

@@ -1,4 +1,5 @@
 import { requirePlatform } from "@/lib/auth";
+import { ChangeConfirm } from "@/components/ChangeConfirm";
 import { PlatformNav } from "../PlatformNav";
 
 /**
@@ -32,6 +33,7 @@ export default async function PlatformConsoleLayout({
   return (
     <div className="min-h-dvh bg-canvas">
       <PlatformNav operatorName={session.name} />
+      <ChangeConfirm />
       <div className="flex min-h-dvh flex-col lg:pl-64">
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:py-8">{children}</main>
         <footer className="border-t border-hairline py-4">

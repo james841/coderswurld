@@ -33,4 +33,5 @@ export const PRIVATE_PATHS = [
   "/launch",
   "/locked",
   "/change-password",
+  "/pay/",
 ];

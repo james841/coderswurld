@@ -28,7 +28,7 @@ import {
  * lose a sale.
  */
 
-type Status = "NEW" | "CONTACTED" | "INVOICED" | "PAID" | "REJECTED";
+type Status = "NEW" | "CONTACTED" | "INVOICED" | "CLAIMED" | "PAID" | "REJECTED";
 
 export function LeadPipeline({
   leadId,
@@ -59,7 +59,11 @@ export function LeadPipeline({
         setError(payload.error ?? "That didn't save. Please try again.");
         return;
       }
-      if (body.sendInvoiceEmail) setSentInvoice(true);
+      if (body.sendInvoiceEmail) {
+        if (payload.emailed === false) {
+          setError(`The status saved, but the email didn't send: ${payload.emailError ?? "check RESEND_API_KEY and MAIL_FROM"}.`);
+        } else setSentInvoice(true);
+      }
       router.refresh();
     } catch {
       setError("Couldn't reach the server. Check your connection.");
@@ -103,11 +107,11 @@ export function LeadPipeline({
             ) : (
               <Send className="size-4" />
             )}
-            {is("INVOICED") ? "Resend invoice" : "Send invoice"}
+            {is("INVOICED") || is("CLAIMED") ? "Resend payment details" : "Send payment details"}
           </button>
         ) : null}
 
-        {!is("INVOICED") && !is("PAID") ? (
+        {!is("INVOICED") && !is("PAID") && !is("CLAIMED") ? (
           <button
             type="button"
             onClick={() => patch("invoiced-quiet", { status: "INVOICED" })}
@@ -128,14 +132,14 @@ export function LeadPipeline({
             type="button"
             onClick={() => patch("paid", { status: "PAID" })}
             disabled={pending !== null}
-            className="btn btn-dark btn-sm"
+            className={is("CLAIMED") ? "btn btn-primary btn-sm" : "btn btn-dark btn-sm"}
           >
             {pending === "paid" ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <Wallet className="size-4" />
             )}
-            Payment received
+            {is("CLAIMED") ? "Confirm payment received" : "Payment received"}
           </button>
         ) : null}
 
@@ -236,7 +240,7 @@ export function LeadNotes({ leadId, initial }: { leadId: string; initial: string
       setSaved(value);
       router.refresh();
     } catch {
-      setError("Couldn't reach the server. Your text is still here — try again.");
+      setError("Couldn't reach the server. Your text is still here. Try again.");
     } finally {
       setBusy(false);
     }

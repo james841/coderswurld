@@ -63,7 +63,7 @@ const nextConfig: NextConfig = {
       ...[
         "/api", "/dashboard", "/products", "/stock", "/suppliers", "/purchases", "/receipts",
         "/sales", "/customers", "/expenses", "/reports", "/staff", "/settings", "/receipt-design",
-        "/hardware", "/pos", "/platform", "/launch", "/locked", "/change-password",
+        "/hardware", "/pos", "/platform", "/launch", "/locked", "/change-password", "/pay",
       ].map((prefix) => ({
         source: `${prefix}/:path*`,
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],

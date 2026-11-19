@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeConfirm, confirmAction } from "@/components/ChangeConfirm";
 import type { ReceiptDesign } from "@/lib/receiptDesign";
 import { InstallAppButton } from "@/components/InstallAppButton";
 import { useRouter } from "next/navigation";
@@ -1340,6 +1341,7 @@ export default function Till({
 
       {/* Outside the themed area on purpose: a receipt is printed on white paper
           whatever colour the screen is. */}
+      <ChangeConfirm />
       {receipt && (
         <Receipt
           data={receipt}
@@ -1390,12 +1392,15 @@ export default function Till({
             {tickets.length > 1 && (
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   if (
                     cart.length > 0 &&
-                    !window.confirm(
-                      `Remove ${active.label || "this customer"} and their items?`,
-                    )
+                    !(await confirmAction({
+                      title: `Remove ${active.label || "this customer"}?`,
+                      body: "Their basket will be cleared. Use this when a customer leaves without buying.",
+                      confirmLabel: "Remove",
+                      danger: true,
+                    }))
                   )
                     return;
                   closeTicket(active.id);

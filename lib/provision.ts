@@ -7,7 +7,7 @@ import { prisma } from "./db";
 import { generateTempPassword, hashPassword } from "./auth";
 import { uniqueOrgSlug } from "./sequence";
 import { getPlan, type PlanId } from "./constants";
-import { emailButton, emailShell, emailTable, escapeHtml, sendMail } from "./mail";
+import { emailButton, emailCallout, emailP, emailShell, emailSteps, emailTable, escapeHtml, sendMail } from "./mail";
 import { formatNaira } from "./money";
 
 /**
@@ -286,39 +286,35 @@ export async function sendWelcomeEmail(params: {
 }) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
+  const signin = `${appUrl.replace(/\/+$/, "")}/signin`;
   const body = `
-<p style="margin:0 0 16px;">Hello ${escapeHtml(params.adminName.split(" ")[0] ?? params.adminName)},</p>
-<p style="margin:0 0 16px;"><strong>${escapeHtml(params.organizationName)}</strong> is now live on Coderswurld Inventory. Here are your main admin details.</p>
+${emailP(`Hello ${escapeHtml(params.adminName.split(" ")[0] ?? params.adminName)},`)}
+${emailP(`Your payment is confirmed and <strong>${escapeHtml(params.organizationName)}</strong> is now live on Coderswurld Inventory. Welcome! Here is your main admin login.`)}
 ${emailTable([
-  ["Sign in at", `<a href="${escapeHtml(appUrl)}/signin" style="color:#c2410c;">${escapeHtml(appUrl)}/signin</a>`],
+  ["Sign in at", `<a href="${escapeHtml(signin)}" style="color:#c2410c;">${escapeHtml(signin.replace(/^https?:\/\//, ""))}</a>`],
   ["Email", `<span style="font-family:monospace;">${escapeHtml(params.adminEmail)}</span>`],
   [
     "Temporary password",
-    `<span style="font-family:monospace;font-size:16px;font-weight:700;letter-spacing:0.5px;">${escapeHtml(params.tempPassword)}</span>`,
+    `<span style="font-family:monospace;font-size:17px;font-weight:800;letter-spacing:1px;">${escapeHtml(params.tempPassword)}</span>`,
   ],
-  ["Plan", `${escapeHtml(params.planName)} — ${formatNaira(params.amountKobo)}`],
-  [
-    "Active until",
-    params.expiresAt.toLocaleDateString("en-NG", { day: "numeric", month: "long", year: "numeric" }),
-  ],
-  ["Receipt prefix", `<span style="font-family:monospace;">${escapeHtml(params.branchCode)}-000001</span>`],
+  ["Plan", `${escapeHtml(params.planName)}, ${formatNaira(params.amountKobo)}`],
+  ["Active until", params.expiresAt.toLocaleDateString("en-NG", { day: "numeric", month: "long", year: "numeric" })],
+  ["Receipt numbers", `<span style="font-family:monospace;">${escapeHtml(params.branchCode)}-000001</span> onwards`],
 ])}
-<p style="margin:0 0 16px;padding:12px;background:#fff4ed;border-left:3px solid #c2410c;border-radius:0 6px 6px 0;font-size:13px;">
-  <strong>You'll be asked to change this password the first time you sign in.</strong>
-  Please do — and don't forward this email to anyone.
-</p>
-<p style="margin:0 0 8px;font-weight:600;color:#0a0a0a;">Your first fifteen minutes</p>
-<ol style="margin:0 0 20px;padding-left:20px;">
-  <li style="margin-bottom:6px;">Add your products — one by one, or import your whole list from Excel.</li>
-  <li style="margin-bottom:6px;">Create accounts for your cashiers under <strong>Staff</strong>.</li>
-  <li style="margin-bottom:6px;">Open the till and ring up a test sale to check your receipt printer.</li>
-</ol>
-${emailButton(`${appUrl}/signin`, "Sign in now")}`;
+${emailButton(signin, "Sign in now")}
+${emailCallout("<strong>You'll be asked to choose your own password the first time you sign in.</strong> Please don't forward this email to anyone.", "warn")}
+<p style="margin:0 0 10px;font-size:15px;font-weight:800;color:#0f172a;">Your first fifteen minutes</p>
+${emailSteps([
+  "Add your products one by one, or import your whole list from Excel.",
+  "Add your cashiers under <strong>Staff</strong>. They can sign in with just their name.",
+  "Open <strong>Printer and scanner</strong>, print a test receipt, then ring up a test sale at the till.",
+])}`;
 
   return sendMail({
     to: params.adminEmail,
     subject: `${params.organizationName} is live — your Coderswurld login`,
     html: emailShell({
+      eyebrow: "Welcome to Coderswurld",
       heading: "Your shop is ready",
       preheader: `Sign in details for ${params.organizationName}.`,
       body,

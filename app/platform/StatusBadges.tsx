@@ -1,15 +1,4 @@
-import {
-  Ban,
-  CheckCircle2,
-  Clock,
-  FileText,
-  Hourglass,
-  Mail,
-  Rocket,
-  Sparkles,
-  Wallet,
-  XCircle,
-} from "lucide-react";
+import { BadgeCheck, Ban, CheckCircle2, Clock, FileText, Hourglass, Mail, Rocket, Sparkles, Wallet, XCircle } from "lucide-react";
 
 /**
  * Status pills, defined once.
@@ -27,6 +16,7 @@ const LEAD_STYLES: Record<
   NEW: { label: "New", className: "badge-brand", icon: Sparkles },
   CONTACTED: { label: "Contacted", className: "badge-info", icon: Mail },
   INVOICED: { label: "Invoiced", className: "badge-warn", icon: FileText },
+  CLAIMED: { label: "Says paid", className: "badge-brand", icon: BadgeCheck },
   PAID: { label: "Paid", className: "badge-good", icon: Wallet },
   PROVISIONED: { label: "Live", className: "badge-good", icon: Rocket },
   REJECTED: { label: "Rejected", className: "badge-neutral", icon: XCircle },

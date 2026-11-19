@@ -4,13 +4,21 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 
+import { confirmAction } from "@/components/ChangeConfirm";
+
 export function WriteOffButton({ batchId, label }: { batchId: string; label: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function go() {
-    if (!confirm(`Remove ${label} from stock as expired? This cannot be undone.`)) return;
+    const ok = await confirmAction({
+      title: "Remove this batch from stock?",
+      body: `${label} will be taken out of stock as expired. This can't be undone.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     setError(null);
     try {
