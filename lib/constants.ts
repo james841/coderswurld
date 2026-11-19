@@ -44,7 +44,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     id: "STARTER",
     name: "Starter",
     tagline: "One shop, one till, everything you need to stop guessing.",
-    priceKobo: 5_000_000, // ₦50,000 / year
+    priceKobo: 10_000_000, // ₦100,000 / year
     seats: { mainAdmin: 1, subAdmin: 2, cashier: UNLIMITED, branches: 1 },
     features: [
       "1 main admin + 2 sub-admins",
@@ -63,7 +63,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     id: "BUSINESS",
     name: "Business",
     tagline: "Multiple tills, real staff controls, profit you can actually see.",
-    priceKobo: 18_000_000, // ₦180,000 / year
+    priceKobo: 25_000_000, // ₦250,000 / year
     seats: { mainAdmin: 2, subAdmin: 8, cashier: UNLIMITED, branches: 3 },
     features: [
       "2 main admins + 8 sub-admins",

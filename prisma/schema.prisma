@@ -1107,3 +1107,17 @@ model StockBatch {
   @@index([organizationId, expiryDate])
   @@index([productId, branchId])
 }
+
+/// Every email the app tries to send, and whether Resend took it. The
+/// platform console's Email page reads this so a failed send is never silent.
+model EmailLog {
+  id         String   @id @default(cuid())
+  to         String
+  subject    String
+  ok         Boolean
+  providerId String?
+  error      String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}

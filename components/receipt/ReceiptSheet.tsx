@@ -207,7 +207,7 @@ export function ReceiptSheet({
         {design.extraLine ? <div className="r-muted">{design.extraLine}</div> : null}
         {design.showBarcode && data.receiptNo ? (
           <div className="r-barcode">
-            <Barcode value={data.receiptNo} symbology="CODE128" moduleWidth={1.4} height={34} fontSize={9} />
+            <Barcode value={data.receiptNo} symbology="CODE128" moduleWidth={1.6} height={40} fontSize={11} />
           </div>
         ) : null}
         {data.offline ? <div className="r-muted">Saved offline. Will sync when back online.</div> : null}

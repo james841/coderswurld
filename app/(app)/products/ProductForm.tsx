@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Barcode } from "@/components/Barcode";
+import { useBarcodeScanner } from "./useBarcodeScanner";
 import { PRODUCT_UNITS } from "@/lib/constants";
 import { formatNaira, marginPercent, markupPercent, parseMoneyInput } from "@/lib/money";
 import { ProductInputSchema, productBusinessRules } from "@/lib/productInput";
@@ -115,6 +116,21 @@ function seedFrom(product: ProductFormValues): FormState {
   };
 }
 
+/** Which form value each input holds, so a stray scan can be taken back out. */
+const FIELD_BY_ID: Record<string, keyof FormState> = {
+  "pf-name": "name",
+  "pf-sku": "sku",
+  "pf-barcode": "barcode",
+  "pf-pack": "packSize",
+  "pf-desc": "description",
+  "pf-cost": "costPrice",
+  "pf-selling": "sellingPrice",
+  "pf-wholesale": "wholesalePrice",
+  "pf-wholesale-qty": "wholesaleMinQty",
+  "pf-minstock": "minStock",
+  "pf-opening": "openingStock",
+};
+
 export function ProductForm({
   mode,
   product,
@@ -185,6 +201,45 @@ export function ProductForm({
   // Not an error — clearance is real. A quiet note the person can ignore.
   const sellingBelowCost =
     canCost && costKobo > 0 && sellingKobo > 0 && sellingKobo < costKobo;
+
+  // ── Hardware scanner ──────────────────────────────────────────────────────
+  // A scanner types the code very fast and then presses Enter. Wherever the
+  // cursor is, the code belongs in the Barcode box: if the digits landed in
+  // another box (Name has the cursor when the page opens), take them back out.
+  // The hook swallows the scanner's Enter, so a scan can never save the form.
+  const [scanned, setScanned] = useState<string | null>(null);
+  useBarcodeScanner(
+    (code) => {
+      const active = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
+      const key = active?.id ? FIELD_BY_ID[active.id] : undefined;
+      setForm((prev) => {
+        const next = { ...prev, barcode: code };
+        if (key && key !== "barcode") {
+          const current = String(prev[key] ?? "");
+          if (current.endsWith(code)) {
+            (next as Record<string, unknown>)[key] = current.slice(0, -code.length);
+          }
+        }
+        return next;
+      });
+      setErrors((prev) => {
+        if (!prev.barcode) return prev;
+        const rest = { ...prev };
+        delete rest.barcode;
+        return rest;
+      });
+      setScanned(code);
+      // Send the cursor where the next thing is typed.
+      const nextField = !form.name.trim() || key === "name" ? "pf-name" : "pf-selling";
+      requestAnimationFrame(() => document.getElementById(nextField)?.focus());
+    },
+    { maxInterKeyMs: 60 },
+  );
+  useEffect(() => {
+    if (!scanned) return;
+    const t = setTimeout(() => setScanned(null), 2500);
+    return () => clearTimeout(t);
+  }, [scanned]);
 
   // ── Barcode duplicate probe ───────────────────────────────────────────────
   // The server is the authority (it refuses a clash on save), but finding out
@@ -304,6 +359,22 @@ export function ProductForm({
         e.preventDefault();
         void save(false);
       }}
+      onKeyDown={(e) => {
+        // Enter in a box never saves: slow scanners and quick fingers both
+        // press it, and a half-filled product is worse than one extra click.
+        // Ctrl+Enter (Cmd+Enter on a Mac) still saves from the keyboard.
+        if (e.key !== "Enter") return;
+        const target = e.target as HTMLElement;
+        if (target.tagName !== "INPUT") return;
+        e.preventDefault();
+        if (e.ctrlKey || e.metaKey) {
+          void save(false);
+          return;
+        }
+        if (target.id === "pf-barcode") {
+          document.getElementById(form.name.trim() ? "pf-selling" : "pf-name")?.focus();
+        }
+      }}
       className="pb-24"
     >
       {problem && (
@@ -365,11 +436,18 @@ export function ProductForm({
                     className="input"
                     value={form.barcode}
                     onChange={(e) => set("barcode", e.target.value.trim())}
+                    // Select what's there, so a new scan replaces it instead of adding on.
+                    onFocus={(e) => e.currentTarget.select()}
                     placeholder="6151100012345"
                     aria-invalid={Boolean(errors.barcode)}
                     inputMode="numeric"
                     autoComplete="off"
                   />
+                  {scanned && (
+                    <p className="mt-1 text-xs font-semibold text-good-700" role="status">
+                      Scanned {scanned}
+                    </p>
+                  )}
                 </Field>
               </div>
 

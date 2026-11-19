@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { AppError, handle, readJson } from "@/lib/api";
+import { explainMailError } from "@/lib/mail";
 import { requirePlatformApi } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { provisionOrganization } from "@/lib/provision";
@@ -160,6 +161,8 @@ export async function POST(request: Request) {
         tempPassword: result.tempPassword,
         expiresAt: result.expiresAt.toISOString(),
         emailDelivered: result.emailDelivered,
+        emailError: result.emailError,
+        emailFix: explainMailError(result.emailError),
       },
       { status: 201 },
     );

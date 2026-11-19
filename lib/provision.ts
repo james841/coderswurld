@@ -70,6 +70,8 @@ export interface ProvisionResult {
   tempPassword: string;
   expiresAt: Date;
   emailDelivered: boolean;
+  /** Resend's reason when the welcome email did not go. */
+  emailError?: string;
 }
 
 /**
@@ -258,7 +260,7 @@ export async function provisionOrganization(
   }).catch((error) => {
     // The org exists and is usable; the operator can resend from the console.
     console.error("[provision] welcome email failed:", error);
-    return { delivered: false };
+    return { delivered: false, reason: error instanceof Error ? error.message : "Unknown email error." };
   });
 
   return {
@@ -269,6 +271,7 @@ export async function provisionOrganization(
     tempPassword,
     expiresAt,
     emailDelivered: delivery.delivered,
+    emailError: delivery.delivered ? undefined : delivery.reason,
   };
 }
 

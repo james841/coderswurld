@@ -74,6 +74,8 @@ interface Success {
   tempPassword: string;
   expiresAt: string;
   emailDelivered: boolean;
+  emailError?: string;
+  emailFix?: string | null;
 }
 
 export function ProvisionForm({ leadId, defaults }: Props) {
@@ -529,8 +531,17 @@ function SuccessPanel({ success }: { success: Success }) {
         ) : (
           <>
             <MailWarning className="mt-0.5 size-4 shrink-0" />
-            The welcome email did not send. Copy the password above and send it to{" "}
-            {success.adminEmail} yourself — the account itself is fine.
+            <span>
+              The welcome email did not send. The account itself is fine: copy the password above and
+              send it to {success.adminEmail} yourself.
+              {success.emailError && (
+                <span className="mt-1.5 block font-mono text-xs">Resend said: {success.emailError}</span>
+              )}
+              {success.emailFix && <span className="mt-1.5 block font-semibold">{success.emailFix}</span>}
+              <Link href="/platform/email" className="mt-1.5 block font-semibold underline">
+                Open the Email page to test your setup
+              </Link>
+            </span>
           </>
         )}
       </p>

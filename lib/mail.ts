@@ -29,22 +29,111 @@ export interface DeliveryResult {
   id?: string;
 }
 
+/**
+ * Read a setting the way people actually paste it into Vercel or .env: with
+ * stray spaces, line breaks or wrapping quotes. A key saved as "re_abc" (quotes
+ * included) is sent to Resend with the quotes and fails as an invalid key.
+ */
+function env(name: string): string {
+  return (process.env[name] ?? "").trim().replace(/^(["'])([\s\S]*)\1$/, "$2").trim();
+}
+
+/** Values copied from .env.example that were never filled in. */
+function isPlaceholder(value: string): boolean {
+  return /yourdomain\.com|example\.com/i.test(value);
+}
+
+function resendKey(): string {
+  return env("RESEND_API_KEY");
+}
+
 /** Resend is the main sender. SMTP stays as a fallback for anyone who prefers it. */
 function resendConfigured(): boolean {
-  return Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.trim());
+  return Boolean(resendKey());
 }
 
 export function isEmailConfigured(): boolean {
-  return resendConfigured() || Boolean(process.env.SMTP_HOST && process.env.SMTP_HOST.trim());
+  return resendConfigured() || Boolean(env("SMTP_HOST"));
 }
 
+const RESEND_TEST_FROM = "Coderswurld Inventory <onboarding@resend.dev>";
+
 function fromAddress(): string {
-  return (
-    process.env.MAIL_FROM ||
-    process.env.SMTP_FROM ||
-    process.env.SMTP_USER ||
-    "Coderswurld Inventory <onboarding@resend.dev>"
-  );
+  for (const name of ["MAIL_FROM", "SMTP_FROM", "SMTP_USER"]) {
+    const value = env(name);
+    if (value && !isPlaceholder(value)) return value;
+  }
+  return RESEND_TEST_FROM;
+}
+
+/** The domain part of the From address, e.g. "coderswurld.com". */
+function fromDomain(from: string): string {
+  const match = from.match(/@([^>\s]+)/);
+  return match ? match[1].toLowerCase() : "";
+}
+
+/** What the Email page in the console shows about the current setup. */
+export function emailSetup() {
+  const from = fromAddress();
+  const mailFromRaw = env("MAIL_FROM");
+  return {
+    provider: resendConfigured() ? "Resend" : env("SMTP_HOST") ? "SMTP" : "None",
+    keySet: resendConfigured(),
+    keyLooksRight: resendKey().startsWith("re_"),
+    keyHint: resendKey() ? `${resendKey().slice(0, 5)}…${resendKey().slice(-4)}` : "",
+    from,
+    fromDomain: fromDomain(from),
+    usingTestSender: fromDomain(from) === "resend.dev",
+    mailFromIsPlaceholder: Boolean(mailFromRaw) && isPlaceholder(mailFromRaw),
+    replyTo: defaultReplyTo() ?? "",
+    salesInbox: env("SALES_NOTIFICATION_EMAIL") || env("PLATFORM_ADMIN_EMAIL"),
+    appUrl: env("NEXT_PUBLIC_APP_URL"),
+  };
+}
+
+/**
+ * Turn Resend's error into the fix, in plain words. Returns null when the
+ * message is not one we recognise; the raw message is always shown as well.
+ */
+export function explainMailError(reason: string | undefined | null): string | null {
+  if (!reason) return null;
+  const r = reason.toLowerCase();
+  if (r.includes("not configured"))
+    return "RESEND_API_KEY is empty. Add it in Vercel (Settings, Environment Variables) and in .env, then redeploy. Vercel only picks up new settings after a redeploy.";
+  if (r.includes("api key is invalid") || r.includes("401") || r.includes("missing api key"))
+    return "Resend does not accept the API key. Create a new key in Resend (API Keys, Full access), paste it without quotes or spaces, save, and redeploy.";
+  if (r.includes("only send testing emails") || r.includes("own email address"))
+    return "You are sending from Resend's test address (onboarding@resend.dev). It can only send to the email you signed up to Resend with. Verify your own domain in Resend (Domains), then set MAIL_FROM to an address on that domain.";
+  if (r.includes("domain is not verified") || r.includes("not verified"))
+    return "The domain in MAIL_FROM is not verified in Resend. Open Resend, Domains, add the domain, copy the DNS records it gives you into your domain provider, and wait for it to show Verified.";
+  if (r.includes("invalid `from`") || r.includes("from field") || r.includes("invalid from"))
+    return 'MAIL_FROM is not written correctly. Use this shape: Coderswurld Inventory <no-reply@yourdomain.com>, with your real domain.';
+  if (r.includes("rate limit") || r.includes("429"))
+    return "Resend is limiting how fast you send. Wait a minute and try again. On the free plan the daily limit is 100 emails.";
+  if (r.includes("fetch failed") || r.includes("enotfound") || r.includes("timeout"))
+    return "The server could not reach Resend. Try again in a minute. If it keeps failing, check Resend's status page.";
+  return null;
+}
+
+/**
+ * Record each attempt. Never throws: a broken log must not stop an email or a
+ * sale. The database is imported lazily so this file stays light.
+ */
+async function logAttempt(to: string, subject: string, result: DeliveryResult) {
+  try {
+    const { prisma } = await import("./db");
+    await prisma.emailLog.create({
+      data: {
+        to: to.slice(0, 500),
+        subject: subject.slice(0, 300),
+        ok: result.delivered,
+        providerId: result.id ?? null,
+        error: result.delivered ? null : (result.reason ?? "Unknown error").slice(0, 1000),
+      },
+    });
+  } catch (error) {
+    console.error("[mail] could not write EmailLog:", error);
+  }
 }
 
 /**
@@ -60,7 +149,7 @@ async function sendWithResend(
   const response = await fetch(`${base}/emails`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      Authorization: `Bearer ${resendKey()}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -103,15 +192,20 @@ function htmlToText(html: string): string {
  */
 function defaultReplyTo(): string | undefined {
   return (
-    process.env.MAIL_REPLY_TO?.trim() ||
-    process.env.SUPPORT_EMAIL?.trim() ||
-    process.env.SALES_NOTIFICATION_EMAIL?.trim() ||
-    process.env.PLATFORM_ADMIN_EMAIL?.trim() ||
-    undefined
+    [env("MAIL_REPLY_TO"), env("SUPPORT_EMAIL"), env("SALES_NOTIFICATION_EMAIL"), env("PLATFORM_ADMIN_EMAIL")].find(
+      (v) => v.includes("@") && !isPlaceholder(v),
+    ) || undefined
   );
 }
 
 export async function sendMail(input: MailMessage): Promise<DeliveryResult> {
+  const result = await deliver(input);
+  const to = (Array.isArray(input.to) ? input.to : [input.to]).join(", ");
+  if (to) await logAttempt(to, input.subject, result);
+  return result;
+}
+
+async function deliver(input: MailMessage): Promise<DeliveryResult> {
   const message: MailMessage = { ...input, replyTo: input.replyTo ?? defaultReplyTo() };
   const recipients = Array.isArray(message.to) ? message.to : [message.to];
   const to = recipients.filter((r) => r && r.includes("@")).join(", ");
@@ -136,7 +230,7 @@ export async function sendMail(input: MailMessage): Promise<DeliveryResult> {
         "",
       ].join("\n"),
     );
-    return { delivered: false, channel: "EMAIL", reason: "Email is not configured." };
+    return { delivered: false, channel: "EMAIL", reason: "Email is not configured (RESEND_API_KEY is empty)." };
   }
 
   try {

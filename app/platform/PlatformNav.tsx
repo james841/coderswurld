@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { BarChart3, Building2, Inbox, LayoutGrid, Loader2, LogOut, Receipt, ShieldCheck } from "lucide-react";
+import { BarChart3, Building2, Inbox, LayoutGrid, Loader2, LogOut, Mail, Receipt, ShieldCheck } from "lucide-react";
 
 import { Logo } from "@/components/Logo";
 
@@ -23,6 +23,7 @@ const LINKS = [
   { href: "/platform/leads", label: "Plan requests", icon: Inbox },
   { href: "/platform/organizations", label: "Businesses", icon: Building2 },
   { href: "/platform/subscriptions", label: "Subscriptions", icon: Receipt },
+  { href: "/platform/email", label: "Email", icon: Mail },
 ];
 
 function useSignOut() {
