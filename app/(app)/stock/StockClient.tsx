@@ -116,7 +116,7 @@ export function StockClient({
     <div className="space-y-4">
       {/* Toolbar: find a product, and (for multi-branch admins) choose where */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-w-[min(100%,16rem)] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
           <input
             value={search}

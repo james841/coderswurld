@@ -3,8 +3,13 @@
  *
  * window.print() prints the whole page; on a long page that means blank extra
  * pages after the receipt, which waste a roll of thermal paper. This copies the
- * receipt and the page's styles into a hidden frame and prints only that, so
+ * receipt and the page's styles into a separate frame and prints only that, so
  * the printer gets exactly one receipt and nothing else.
+ *
+ * The frame is real-sized and parked off-screen, not 0x0 or hidden: Chrome can
+ * print a zero-size or visibility:hidden frame as a blank page, or not at all.
+ * It also always prints, even if a stylesheet or logo is slow or fails to load,
+ * and falls back to printing the page if the frame can't be used.
  *
  * Works with Chrome's --kiosk-printing (silent printing) like a normal print.
  */
@@ -13,9 +18,16 @@ export function printReceipt(sheet: HTMLElement | null): void {
     window.print();
     return;
   }
+
+  // Remove a frame left over from an earlier print.
+  document.getElementById("cw-print-frame")?.remove();
+
   const frame = document.createElement("iframe");
+  frame.id = "cw-print-frame";
   frame.setAttribute("aria-hidden", "true");
-  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  frame.setAttribute("tabindex", "-1");
+  frame.style.cssText =
+    "position:fixed;left:-10000px;top:0;width:80mm;height:200mm;border:0;opacity:0;pointer-events:none";
   document.body.appendChild(frame);
 
   const doc = frame.contentDocument;
@@ -29,8 +41,27 @@ export function printReceipt(sheet: HTMLElement | null): void {
   const styles = [...document.querySelectorAll('style, link[rel="stylesheet"]')]
     .map((n) => n.outerHTML)
     .join("\n");
+
+  let printed = false;
+  const go = () => {
+    if (printed) return;
+    printed = true;
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      // Some browsers refuse to print from a frame: print the page instead.
+      window.print();
+    }
+    // Give the print dialog time to take its copy before the frame goes.
+    setTimeout(() => frame.remove(), 60_000);
+  };
+
+  // Listen before writing, so a fast load is never missed.
+  frame.addEventListener("load", () => setTimeout(go, 150), { once: true });
+
   doc.open();
-  doc.write(`<!doctype html><html><head><meta charset="utf-8">${styles}
+  doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt</title>${styles}
 <style>
   @page { margin: 0; size: auto; }
   html, body { margin: 0; padding: 0; background: #fff; }
@@ -38,13 +69,19 @@ export function printReceipt(sheet: HTMLElement | null): void {
 </style></head><body>${sheet.outerHTML}</body></html>`);
   doc.close();
 
-  const go = () => {
-    win.focus();
-    win.print();
-    // Give the print dialog time to take its copy before the frame goes.
-    setTimeout(() => frame.remove(), 1500);
-  };
-  // Wait for the stylesheets (and a logo, if any) to load first.
-  if (doc.readyState === "complete") setTimeout(go, 250);
-  else frame.addEventListener("load", () => setTimeout(go, 100), { once: true });
+  // Wait for images (the shop logo) when there are any, but never forever.
+  const images = [...doc.images].filter((img) => !img.complete);
+  if (images.length) {
+    Promise.all(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            img.addEventListener("load", () => resolve(), { once: true });
+            img.addEventListener("error", () => resolve(), { once: true });
+          }),
+      ),
+    ).then(() => setTimeout(go, 100));
+  }
+  // A slow stylesheet or a load event that never comes must not block printing.
+  setTimeout(go, 1500);
 }

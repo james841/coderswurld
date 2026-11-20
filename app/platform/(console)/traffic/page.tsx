@@ -226,7 +226,7 @@ export default async function TrafficPage({
         ) : (
           <div className="mt-4 flex h-48 items-end gap-[3px]">
             {series.map((d) => (
-              <div key={d.day} className="group relative flex h-full flex-1 flex-col justify-end" title={`${d.day}: ${d.visitors} visitors, ${d.views} views`}>
+              <div key={d.day} className="group relative flex h-full flex-1 flex-col justify-end" title={`${dayLabel(d.day)}: ${d.visitors} visitors, ${d.views} views`}>
                 <div
                   className="rounded-t-md bg-navy-600 transition-colors group-hover:bg-brand-600"
                   style={{ height: `${Math.max(d.visitors ? 4 : 1, (d.visitors / peak) * 100)}%`, opacity: d.visitors ? 1 : 0.25 }}
@@ -236,8 +236,8 @@ export default async function TrafficPage({
           </div>
         )}
         <div className="mt-2 flex justify-between text-[0.6875rem] text-ink-400">
-          <span>{series[0]?.day}</span>
-          <span>{series[series.length - 1]?.day}</span>
+          <span>{series[0] ? dayLabel(series[0].day) : null}</span>
+          <span>{series.length ? dayLabel(series[series.length - 1].day) : null}</span>
         </div>
       </section>
 
@@ -443,4 +443,13 @@ function BarList({
 
 function Empty({ text }: { text: string }) {
   return <p className="py-8 text-center text-sm text-ink-500">{text}</p>;
+}
+
+/** "2026-10-22" to "22 Oct". The day key is already in Lagos time. */
+function dayLabel(day: string): string {
+  const [y, mo, d] = day.split("-").map(Number);
+  if (!y || !mo || !d) return day;
+  return new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short", timeZone: "UTC" }).format(
+    new Date(Date.UTC(y, mo - 1, d)),
+  );
 }

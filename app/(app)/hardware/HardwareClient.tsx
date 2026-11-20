@@ -70,7 +70,7 @@ export function HardwareClient({
 }) {
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <PrinterCard org={org} branchName={branchName} cashierName={cashierName} settings={settings} design={design} stamp={stamp} />
         <ScannerCard canLookUpProducts={canLookUpProducts} />
       </div>
@@ -305,7 +305,7 @@ function Guides({ paper }: { paper: string }) {
   const target = `"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --kiosk-printing --app=${origin}/pos`;
 
   return (
-    <div className="grid gap-5 xl:grid-cols-2">
+    <div className="grid gap-5 xl:grid-cols-2 [&>*]:min-w-0">
       <Guide
         icon={Usb}
         title="Set up the receipt printer (Xprinter and similar)"

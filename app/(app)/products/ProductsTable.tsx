@@ -114,10 +114,13 @@ let viewInMemory: ProductView | null = null;
 function readView(): ProductView {
   if (viewInMemory) return viewInMemory;
   try {
-    return window.localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "table";
+    const saved = window.localStorage.getItem(VIEW_KEY);
+    if (saved === "grid" || saved === "table") return saved;
   } catch {
-    return "table";
+    // Storage refused: fall through to the screen-size default.
   }
+  // Nothing chosen yet: cards on a phone (the table is too wide), table elsewhere.
+  return window.matchMedia?.("(max-width: 639px)").matches ? "grid" : "table";
 }
 
 function writeView(next: ProductView) {

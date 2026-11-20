@@ -65,7 +65,7 @@ export function StatTile({
     <>
       <div className="flex items-center gap-2">
         <Icon className={`size-4 shrink-0 ${iconClass}`} />
-        <p className="truncate text-xs font-semibold uppercase tracking-wide text-ink-500">
+        <p className="min-w-0 text-xs font-semibold uppercase leading-tight tracking-wide text-ink-500 [overflow-wrap:anywhere]">
           {label}
         </p>
         {href ? (

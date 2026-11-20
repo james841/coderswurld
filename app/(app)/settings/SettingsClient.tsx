@@ -222,7 +222,7 @@ export function SettingsClient({
       {/* Section menu: a column on a desktop, a swipeable row on a phone. */}
       <nav
         aria-label="Settings sections"
-        className="-mx-4 mb-4 flex gap-1.5 overflow-x-auto px-4 pb-1 lg:mx-0 lg:mb-0 lg:flex-col lg:overflow-visible lg:px-0"
+        className="mb-4 flex gap-1.5 overflow-x-auto pb-1 lg:mb-0 lg:flex-col lg:overflow-visible"
       >
         {SECTIONS.map((s) => {
           const active = s.id === section;

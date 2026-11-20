@@ -411,7 +411,7 @@ export default async function ReportsPage({
           ) : (
             <div className="mt-6">
               <div
-                className="flex h-44 items-end gap-1"
+                className="flex h-44 items-stretch gap-1"
                 role="img"
                 aria-label={`Daily takings, ${rangeLabel.toLowerCase()}`}
               >
