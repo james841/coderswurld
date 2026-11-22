@@ -63,3 +63,17 @@ export function receiptPhones(design: ReceiptDesign, businessPhone: string | nul
   if (list.length > 0) return list;
   return businessPhone ? [businessPhone] : [];
 }
+
+/**
+ * Paper the receipt prints on. 80mm and 58mm are till rolls (thermal
+ * printers). A4 is a normal office printer: the receipt becomes a full-page
+ * invoice layout and always prints through the browser's print window, because
+ * office printers don't understand till-printer (ESC/POS) commands.
+ */
+export const RECEIPT_WIDTHS = ["80mm", "58mm", "A4"] as const;
+export type ReceiptWidth = (typeof RECEIPT_WIDTHS)[number];
+
+/** Whatever is stored, read it as a width we know, defaulting to 80mm. */
+export function toReceiptWidth(value: unknown): ReceiptWidth {
+  return (RECEIPT_WIDTHS as readonly unknown[]).includes(value) ? (value as ReceiptWidth) : "80mm";
+}

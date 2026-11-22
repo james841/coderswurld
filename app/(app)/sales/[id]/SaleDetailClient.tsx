@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { printReceipt } from "@/lib/printReceipt";
 import { ReceiptSheet } from "@/components/receipt/ReceiptSheet";
-import type { ReceiptDesign } from "@/lib/receiptDesign";
+import { type ReceiptDesign, type ReceiptWidth } from "@/lib/receiptDesign";
 import { useRouter } from "next/navigation";
 import { Printer, Ban } from "lucide-react";
 
@@ -50,7 +50,7 @@ export interface SaleDetail {
 
 type Org = { name: string; phone: string | null; address: string | null; logoUrl: string | null; timezone: string };
 type Settings = {
-  receiptWidth: "80mm" | "58mm";
+  receiptWidth: ReceiptWidth;
   receiptHeader: string | null;
   receiptFooter: string;
   receiptShowLogo: boolean;
@@ -139,11 +139,17 @@ export function SaleDetailClient({
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[22rem_minmax(0,1fr)] lg:items-start">
+      <div
+        className={`grid gap-4 lg:items-start ${
+          settings.receiptWidth === "A4" ? "" : "lg:grid-cols-[22rem_minmax(0,1fr)]"
+        }`}
+      >
         {/* The artifact: a faithful reprint of the slip */}
         <div>
           <div id="sale-receipt" className="flex justify-center lg:block">
-            <div className="w-fit shadow-[0_6px_20px_rgba(10,20,40,0.12)]">
+            <div
+              className={`${settings.receiptWidth === "A4" ? "w-full max-w-[186mm]" : "w-fit"} shadow-[0_6px_20px_rgba(10,20,40,0.12)]`}
+            >
               <ReceiptSheet
                 data={{
                   receiptNo: detail.receiptNo,

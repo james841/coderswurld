@@ -6,16 +6,10 @@ import { Check, ImagePlus, Loader2, Phone, Plus, RotateCcw, Trash2 } from "lucid
 
 import { ReceiptSheet, type ReceiptSheetData } from "@/components/receipt/ReceiptSheet";
 import { Field, Toggle } from "@/components/ui/Sheet";
-import {
-  DEFAULT_RECEIPT_DESIGN,
-  RECEIPT_STYLES,
-  RECEIPT_STYLE_INFO,
-  type ReceiptDesign,
-  type ReceiptStyle,
-} from "@/lib/receiptDesign";
+import { DEFAULT_RECEIPT_DESIGN, RECEIPT_STYLES, RECEIPT_STYLE_INFO, type ReceiptDesign, type ReceiptStyle, type ReceiptWidth } from "@/lib/receiptDesign";
 
 interface Values {
-  receiptWidth: "80mm" | "58mm";
+  receiptWidth: ReceiptWidth;
   receiptHeader: string | null;
   receiptFooter: string;
   receiptShowCashier: boolean;
@@ -347,9 +341,14 @@ export function ReceiptDesigner({
             <Segmented
               label="Paper width"
               value={values.receiptWidth}
-              options={[["80mm", "80mm (wide)"], ["58mm", "58mm (narrow)"]]}
+              options={[["80mm", "80mm roll"], ["58mm", "58mm roll"], ["A4", "A4 page"]]}
               onChange={(v) => set("receiptWidth", v as Values["receiptWidth"])}
             />
+            <p className="self-end text-xs text-ink-500 sm:pb-1">
+              {values.receiptWidth === "A4"
+                ? "For normal office printers (HP, Canon and so on). Prints a full-page receipt laid out like an invoice, through the print window."
+                : "For till printers like Xprinter. 80mm is the common wide roll, 58mm the narrow one."}
+            </p>
           </div>
           <div className="mt-2 divide-y divide-hairline">
             <Toggle checked={values.receiptAutoPrint} onChange={(v) => set("receiptAutoPrint", v)} label="Print as soon as a sale is done" description="Leave off to save paper. Cashiers can still print or send on WhatsApp." />
@@ -365,7 +364,9 @@ export function ReceiptDesigner({
             <p className="text-xs text-ink-500">Sample sale</p>
           </div>
           <div className="max-h-[70vh] overflow-y-auto pb-1">
-            <div className="mx-auto w-fit shadow-[0_6px_20px_rgba(10,20,40,0.14)]">
+            <div
+              className={`mx-auto ${values.receiptWidth === "A4" ? "w-full" : "w-fit"} shadow-[0_6px_20px_rgba(10,20,40,0.14)]`}
+            >
               <ReceiptSheet
                 data={data}
                 org={{ ...org, logoUrl: logo }}

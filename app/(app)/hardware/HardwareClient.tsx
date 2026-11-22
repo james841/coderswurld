@@ -107,7 +107,7 @@ function PrinterCard({
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-bold text-ink-950">Receipt printer</h2>
           <p className="text-sm text-ink-500">
-            Set for <span className="font-semibold text-ink-800">{settings.receiptWidth}</span> paper.{" "}
+            Set for <span className="font-semibold text-ink-800">{settings.receiptWidth === "A4" ? "A4 page" : `${settings.receiptWidth} roll`}</span> paper.{" "}
             <Link href="/receipt-design" className="font-semibold text-navy-700 hover:underline">
               Change
             </Link>
@@ -122,18 +122,27 @@ function PrinterCard({
           Print test receipt
         </button>
       </header>
-      <div className="grid gap-4 p-5 sm:grid-cols-[1fr_auto]">
+      <div className={`grid gap-4 p-5 ${settings.receiptWidth === "A4" ? "" : "sm:grid-cols-[1fr_auto]"}`}>
         <ul className="space-y-2 text-sm text-ink-700">
           <Check>Prints the whole receipt, edge to edge, with nothing cut off on the right.</Check>
           <Check>The ₦ signs and the barcode at the bottom are clear.</Check>
           <Check>The paper stops just after the last line and cuts (if your printer has a cutter).</Check>
-          <li className="pt-1 text-xs text-ink-500">
-            Cut off on the right? You likely have 58mm paper with the 80mm setting. Text very small? Set the
-            paper size to 80mm in the printer settings when the print window opens.
-          </li>
+          {settings.receiptWidth === "A4" ? (
+            <li className="pt-1 text-xs text-ink-500">
+              A4 prints through the print window. Choose your office printer, set Paper size to A4 and Scale to
+              100, and untick Headers and footers.
+            </li>
+          ) : (
+            <li className="pt-1 text-xs text-ink-500">
+              Cut off on the right? You likely have 58mm paper with the 80mm setting. Text very small? Set the
+              paper size to 80mm in the printer settings when the print window opens.
+            </li>
+          )}
         </ul>
         <div ref={sheetRef} className="rounded-2xl bg-ink-100 p-3">
-          <div className="mx-auto w-fit shadow-[0_6px_20px_rgba(10,20,40,0.12)]">
+          <div
+            className={`mx-auto ${settings.receiptWidth === "A4" ? "w-full" : "w-fit"} shadow-[0_6px_20px_rgba(10,20,40,0.12)]`}
+          >
             <ReceiptSheet
               data={{ ...SAMPLE, cashierName }}
               org={org}
@@ -147,7 +156,10 @@ function PrinterCard({
           </div>
         </div>
       </div>
-      <DirectPrintPanel getSheet={() => sheetRef.current?.querySelector(".receipt-sheet") as HTMLElement | null} />
+      <DirectPrintPanel
+        paper={settings.receiptWidth}
+        getSheet={() => sheetRef.current?.querySelector(".receipt-sheet") as HTMLElement | null}
+      />
     </section>
   );
 }
@@ -314,7 +326,7 @@ function Guides({ paper }: { paper: string }) {
         steps={[
           ["Plug it in", "Connect the printer to the computer with its USB cable, plug in the power and switch it on. Load the paper roll with the shiny side facing the print head."],
           ["Install the driver", "Install the Windows driver that came with the printer (on the CD or from the Xprinter website for your model, for example XP-80C or XP-58). Windows may also find it on its own."],
-          ["Set the paper size", `In Windows, open Settings, Bluetooth & devices, Printers & scanners, pick the printer, then Printing preferences. Choose the ${paper} roll size and "No margin" if offered.`],
+          ["Set the paper size", `In Windows, open Settings, Bluetooth & devices, Printers & scanners, pick the printer, then Printing preferences. ${paper === "A4" ? 'Choose A4 as the paper size.' : `Choose the ${paper} roll size and "No margin" if offered.`}`],
           ["Make it the default", "On the same screen, choose Set as default, so receipts go to it without picking it each time."],
           ["Print a test", "Click Print test receipt above. In the print window choose the printer, set Margins to None and Scale to 100, untick Headers and footers, then Print."],
         ]}

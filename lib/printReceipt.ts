@@ -41,8 +41,11 @@ function notice(text: string, tone: "good" | "bad") {
  * Otherwise, or if direct printing fails, the browser's print window opens.
  */
 export async function printReceipt(sheet: HTMLElement | null): Promise<void> {
+  // A4 goes to an office printer, which doesn't understand till-printer
+  // commands, so it always uses the print window, even with direct printing on.
+  const a4 = sheet?.getAttribute("data-width") === "A4";
   const direct = getDirectPrint();
-  if (direct.enabled && sheet) {
+  if (direct.enabled && sheet && !a4) {
     try {
       const bytes = await sheetToEscPos(sheet, { openDrawer: direct.openDrawer });
       await sendToPrinter(bytes, direct);
@@ -72,8 +75,10 @@ function browserPrint(sheet: HTMLElement | null): void {
   frame.id = "cw-print-frame";
   frame.setAttribute("aria-hidden", "true");
   frame.setAttribute("tabindex", "-1");
-  frame.style.cssText =
-    "position:fixed;left:-10000px;top:0;width:80mm;height:200mm;border:0;opacity:0;pointer-events:none";
+  const a4 = sheet.getAttribute("data-width") === "A4";
+  frame.style.cssText = `position:fixed;left:-10000px;top:0;width:${a4 ? "210mm" : "80mm"};height:${
+    a4 ? "297mm" : "200mm"
+  };border:0;opacity:0;pointer-events:none`;
   document.body.appendChild(frame);
 
   const doc = frame.contentDocument;
@@ -109,10 +114,15 @@ function browserPrint(sheet: HTMLElement | null): void {
   doc.open();
   doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt</title>${styles}
 <style>
-  @page { margin: 0; size: auto; }
+  @page { margin: ${a4 ? "12mm" : "0"}; size: ${a4 ? "A4 portrait" : "auto"}; }
   html, body { margin: 0; padding: 0; background: #fff; }
   .receipt-sheet { margin: 0 auto; box-shadow: none !important; }
-</style></head><body>${sheet.outerHTML}</body></html>`);
+  /* The app's print rules hide everything outside a .print-root (so a page
+     print shows only the receipt). This frame holds nothing but the receipt,
+     so it sits in a .print-root and is forced visible: without this the
+     printer receives a blank page. */
+  @media print { body * { visibility: visible !important; } }
+</style></head><body><div class="print-root">${sheet.outerHTML}</div></body></html>`);
   doc.close();
 
   // Wait for images (the shop logo) when there are any, but never forever.

@@ -2,7 +2,7 @@ import { requireTenant } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/constants";
 import { prisma } from "@/lib/db";
 import { hasPermission } from "@/lib/permissions";
-import { parseReceiptDesign } from "@/lib/receiptDesign";
+import { parseReceiptDesign, toReceiptWidth } from "@/lib/receiptDesign";
 import { NoAccess } from "@/components/ui/NoAccess";
 import { PageHeader } from "@/components/ui/PageHeader";
 
@@ -52,7 +52,7 @@ export default async function HardwarePage() {
         branchName={mainBranch?.name ?? "Main branch"}
         cashierName={user.name}
         settings={{
-          receiptWidth: settings?.receiptWidth === "58mm" ? "58mm" : "80mm",
+          receiptWidth: toReceiptWidth(settings?.receiptWidth),
           receiptHeader: settings?.receiptHeader ?? null,
           receiptFooter: settings?.receiptFooter ?? "Thank you for your patronage!",
           receiptShowLogo: settings?.receiptShowLogo ?? false,

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChangeConfirm, confirmAction } from "@/components/ChangeConfirm";
-import type { ReceiptDesign } from "@/lib/receiptDesign";
+import { type ReceiptDesign, type ReceiptWidth } from "@/lib/receiptDesign";
 import { InstallAppButton } from "@/components/InstallAppButton";
 import { useRouter } from "next/navigation";
 import {
@@ -104,7 +104,7 @@ export interface PosBootstrap {
     vatEnabled: boolean;
     vatBasisPoints: number;
     vatInclusive: boolean;
-    receiptWidth: "80mm" | "58mm";
+    receiptWidth: ReceiptWidth;
     receiptHeader: string | null;
     receiptFooter: string;
     receiptShowLogo: boolean;

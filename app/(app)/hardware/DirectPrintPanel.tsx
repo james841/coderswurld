@@ -37,7 +37,14 @@ function looksLikeReceiptPrinter(p: HelperPrinter) {
   );
 }
 
-export function DirectPrintPanel({ getSheet }: { getSheet: () => HTMLElement | null }) {
+export function DirectPrintPanel({
+  getSheet,
+  paper,
+}: {
+  getSheet: () => HTMLElement | null;
+  /** The shop's receipt paper. A4 never prints directly. */
+  paper?: string;
+}) {
   const [status, setStatus] = useState<Status>({ state: "checking" });
   const [settings, setSettings] = useState<DirectPrintSettings>(() =>
     typeof window === "undefined" ? { enabled: false, printer: null, host: null, openDrawer: false } : getDirectPrint(),
@@ -102,6 +109,13 @@ export function DirectPrintPanel({ getSheet }: { getSheet: () => HTMLElement | n
             Faster and sharper: the receipt goes directly to your receipt printer using its own font. Needs the free
             Coderswurld Print Helper on this computer.
           </p>
+          {paper === "A4" ? (
+            <p className="mt-2 rounded-xl bg-warn-50 px-3 py-2 text-sm text-warn-700 ring-1 ring-warn-200">
+              Your receipts are set to <strong>A4</strong>. This only works with till printers on 80mm or 58mm rolls, so
+              A4 receipts always open the normal print window. You can still set it up here for a till printer, and it
+              will be used if you switch back to a roll in Receipt design.
+            </p>
+          ) : null}
         </div>
         <button type="button" onClick={() => void check()} className="btn btn-ghost btn-sm" disabled={status.state === "checking"}>
           <RefreshCw className={`size-4 ${status.state === "checking" ? "animate-spin" : ""}`} />

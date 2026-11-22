@@ -6,6 +6,7 @@ import { requireTenantApi } from "@/lib/auth";
 import { BUSINESS_TYPES, NIGERIAN_STATES, PERMISSIONS } from "@/lib/constants";
 import { prisma } from "@/lib/db";
 import { requirePermission } from "@/lib/permissions";
+import { RECEIPT_WIDTHS } from "@/lib/receiptDesign";
 
 /**
  * Business settings: the profile, the receipt, how the till behaves, alerts,
@@ -50,7 +51,7 @@ const SettingsSchema = z
     departmentsEnabled: z.boolean(),
 
     // ── Receipt ─────────────────────────────────────────────────────────────
-    receiptWidth: z.enum(["80mm", "58mm"]),
+    receiptWidth: z.enum(RECEIPT_WIDTHS),
     receiptHeader: optionalText(200),
     receiptFooter: z.string().trim().max(200),
     receiptShowCashier: z.boolean(),

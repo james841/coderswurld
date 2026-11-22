@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { parseReceiptDesign } from "@/lib/receiptDesign";
+import { parseReceiptDesign, toReceiptWidth } from "@/lib/receiptDesign";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
@@ -165,7 +165,7 @@ export default async function SaleDetailPage({
         }}
         design={parseReceiptDesign(settings?.receiptDesign)}
         settings={{
-          receiptWidth: (settings?.receiptWidth as "80mm" | "58mm") ?? "80mm",
+          receiptWidth: toReceiptWidth(settings?.receiptWidth),
           receiptHeader: settings?.receiptHeader ?? null,
           receiptFooter: settings?.receiptFooter ?? "Thank you for your patronage!",
           receiptShowLogo: settings?.receiptShowLogo ?? false,

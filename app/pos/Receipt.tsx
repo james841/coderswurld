@@ -6,7 +6,7 @@ import { CheckCircle2, MessageCircle, Plus, Printer, Send, X } from "lucide-reac
 import { ReceiptSheet, type ReceiptSheetData } from "@/components/receipt/ReceiptSheet";
 import { formatNaira } from "@/lib/money";
 import { PAYMENT_METHOD_LABELS } from "@/lib/constants";
-import { receiptPhones, type ReceiptDesign } from "@/lib/receiptDesign";
+import { receiptPhones, type ReceiptDesign, type ReceiptWidth } from "@/lib/receiptDesign";
 import { printReceipt } from "@/lib/printReceipt";
 
 /** The receipt on screen in this dialog. */
@@ -35,7 +35,7 @@ export default function Receipt({
   org: { name: string; timezone: string; phone: string | null; address?: string | null; logoUrl: string | null };
   branch: { name: string; code: string };
   settings: {
-    receiptWidth: "80mm" | "58mm";
+    receiptWidth: ReceiptWidth;
     receiptHeader: string | null;
     receiptFooter: string;
     receiptShowLogo: boolean;
@@ -104,7 +104,9 @@ export default function Receipt({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/60 p-3 backdrop-blur-[2px] sm:p-6">
-      <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[calc(100dvh-3rem)]">
+      <div className={`flex max-h-[calc(100dvh-1.5rem)] w-full ${
+          settings.receiptWidth === "A4" ? "max-w-3xl" : "max-w-md"
+        } flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[calc(100dvh-3rem)]`}>
         {/* ── Outcome ─────────────────────────────────────────────────── */}
         <div className={`texture-waves relative px-5 pb-5 pt-4 text-white ${onCredit ? "bg-brand-700" : "bg-good-700"}`}>
           <button
@@ -142,7 +144,7 @@ export default function Receipt({
 
         {/* ── The receipt, as it will print ───────────────────────────── */}
         <div className="min-h-0 flex-1 overflow-y-auto bg-ink-100 px-4 py-5">
-          <div className="print-root mx-auto w-fit">
+          <div className={`print-root mx-auto ${settings.receiptWidth === "A4" ? "w-full max-w-[186mm]" : "w-fit"}`}>
             <div className="shadow-[0_6px_20px_rgba(10,20,40,0.12)]">
               <ReceiptSheet data={data} org={org} branch={branch} settings={settings} design={design} stamp={stamp} />
               <div className="receipt-paper-edge" aria-hidden />

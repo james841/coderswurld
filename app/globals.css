@@ -703,6 +703,89 @@
 .receipt-sheet .r-barcode { display: flex; justify-content: center; margin-top: 6px; }
 .receipt-sheet .r-barcode svg { max-width: 100%; height: auto; }
 
+/* ── A4: a full-page receipt for office printers, laid out like an invoice ──
+   Fluid on screen (fills its box up to the printable width of an A4 page) so
+   the till pop-up and the designer can show it without scaling. Office
+   printers do greys well, so the table header gets a light grey fill. */
+.receipt-sheet[data-width="A4"] {
+  width: 100%;
+  max-width: 186mm;
+  padding: clamp(14px, 4%, 8mm);
+  font-weight: 400;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.receipt-sheet[data-width="A4"][data-size="SMALL"] { font-size: 11.5px; }
+.receipt-sheet[data-width="A4"][data-size="LARGE"] { font-size: 14px; }
+.receipt-sheet[data-width="A4"][data-font="MONO"] { font-weight: 400; }
+.receipt-sheet[data-width="A4"] .r-strong { font-weight: 700; }
+.receipt-sheet[data-width="A4"] .r-shop { font-size: 1.7em; font-weight: 800; }
+.receipt-sheet .a4-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px 24px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #000;
+}
+.receipt-sheet .a4-shop { display: flex; gap: 12px; align-items: flex-start; min-width: 0; flex: 1 1 16rem; }
+.receipt-sheet .a4-logo { max-height: 64px; max-width: 120px; object-fit: contain; }
+.receipt-sheet .a4-doc { flex: 0 1 auto; text-align: right; }
+.receipt-sheet .a4-title { font-size: 1.9em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.receipt-sheet .a4-facts { margin-left: auto; border-collapse: collapse; margin-top: 4px; }
+.receipt-sheet .a4-facts th { font-weight: 400; text-align: left; padding: 1px 12px 1px 0; white-space: nowrap; }
+.receipt-sheet .a4-facts td { text-align: right; padding: 1px 0; }
+.receipt-sheet .a4-banner { margin: 10px 0 0; font-size: 1.2em; }
+.receipt-sheet .a4-customer { margin-top: 12px; display: flex; gap: 10px; align-items: baseline; }
+.receipt-sheet .a4-label { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.06em; }
+.receipt-sheet .a4-items { width: 100%; border-collapse: collapse; margin-top: 14px; }
+.receipt-sheet .a4-items th {
+  background: #ececec;
+  font-weight: 700;
+  text-align: left;
+  padding: 6px 8px;
+  border-top: 1.5px solid #000;
+  border-bottom: 1.5px solid #000;
+}
+.receipt-sheet .a4-items td { padding: 6px 8px; border-bottom: 1px solid #bbb; vertical-align: top; }
+.receipt-sheet .a4-items tr { break-inside: avoid; }
+.receipt-sheet .a4-items thead { display: table-header-group; } /* repeats on every page */
+.receipt-sheet .a4-num { width: 2.2em; text-align: right; padding-right: 4px !important; }
+.receipt-sheet .a4-name { overflow-wrap: anywhere; }
+.receipt-sheet .a4-right { text-align: right !important; }
+.receipt-sheet .a4-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-top: 14px;
+  break-inside: avoid;
+}
+.receipt-sheet .a4-notes { flex: 1 1 14rem; min-width: 0; }
+.receipt-sheet .a4-notes > * + * { margin-top: 6px; }
+.receipt-sheet .a4-totals { flex: 0 1 18rem; min-width: 14rem; margin-left: auto; }
+.receipt-sheet .a4-totals .r-row { padding: 2px 0; }
+.receipt-sheet[data-width="A4"] .r-total { border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 6px 0; margin: 6px 0; }
+.receipt-sheet[data-width="A4"][data-style="MODERN"] .r-total { border: 2px solid #000; border-radius: 6px; padding: 6px 10px; }
+.receipt-sheet[data-width="A4"][data-style="BOLD"] .r-total { background: #000; padding: 7px 10px; border: 0; }
+.receipt-sheet[data-width="A4"][data-style="CLASSIC"] .a4-head { border-bottom-style: dashed; }
+.receipt-sheet[data-width="A4"][data-style="CLASSIC"] .a4-items td { border-bottom-style: dashed; }
+.receipt-sheet .a4-footer { font-weight: 600; }
+.receipt-sheet .a4-foot { margin-top: 18px; text-align: center; }
+.receipt-sheet .a4-foot > * + * { margin-top: 6px; }
+/* In a narrow box (the designer preview, a phone) drop the row numbers and
+   tighten up, so item names get the room. A printed A4 page is never this narrow. */
+.receipt-sheet[data-width="A4"] { container-type: inline-size; }
+@container (max-width: 34rem) {
+  .receipt-sheet .a4-num { display: none; }
+  .receipt-sheet .a4-items th,
+  .receipt-sheet .a4-items td { padding: 5px 4px; }
+  .receipt-sheet .a4-doc { text-align: left; flex-basis: 100%; }
+  .receipt-sheet .a4-facts { margin-left: 0; }
+  .receipt-sheet .a4-facts td { text-align: left; }
+  .receipt-sheet .a4-totals { flex-basis: 100%; min-width: 0; }
+}
+
 /* Classic: typewriter lettering, dashed rules, plain total. */
 .receipt-sheet[data-style="CLASSIC"] .r-rule { border-top-style: dashed; }
 .receipt-sheet[data-style="CLASSIC"] .r-shop { text-transform: uppercase; letter-spacing: 0.04em; }
@@ -772,6 +855,11 @@
   }
   .receipt-sheet[data-width="58mm"] {
     max-width: 50mm;
+  }
+  .receipt-sheet[data-width="A4"] {
+    max-width: none;
+    width: 100%;
+    padding: 0;
   }
   .receipt-paper-edge {
     display: none !important;

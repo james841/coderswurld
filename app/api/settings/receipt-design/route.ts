@@ -4,7 +4,7 @@ import { z } from "zod";
 import { AppError, handle, readJson } from "@/lib/api";
 import { requireTenantApi } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { canDesignReceipt, receiptDesignSchema } from "@/lib/receiptDesign";
+import { canDesignReceipt, receiptDesignSchema, RECEIPT_WIDTHS } from "@/lib/receiptDesign";
 
 /**
  * PATCH /api/settings/receipt-design: how the receipt looks.
@@ -18,7 +18,7 @@ import { canDesignReceipt, receiptDesignSchema } from "@/lib/receiptDesign";
 const LOGO = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
 
 const Body = z.object({
-  receiptWidth: z.enum(["80mm", "58mm"]),
+  receiptWidth: z.enum(RECEIPT_WIDTHS),
   receiptHeader: z.string().trim().max(200).nullable().transform((v) => v || null),
   receiptFooter: z.string().trim().max(200),
   receiptShowCashier: z.boolean(),

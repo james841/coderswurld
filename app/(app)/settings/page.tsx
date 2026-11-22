@@ -10,6 +10,7 @@ import { isWhatsAppConfigured } from "@/lib/whatsapp";
 import { NoAccess } from "@/components/ui/NoAccess";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SettingsClient, type SettingsValues } from "./SettingsClient";
+import { toReceiptWidth } from "@/lib/receiptDesign";
 
 /**
  * Settings — the business's own details and how the product behaves for it.
@@ -66,7 +67,7 @@ export default async function SettingsPage() {
   const values: SettingsValues = {
     ...business,
     departmentsEnabled: settings?.departmentsEnabled ?? false,
-    receiptWidth: settings?.receiptWidth === "58mm" ? "58mm" : "80mm",
+    receiptWidth: toReceiptWidth(settings?.receiptWidth),
     receiptHeader: settings?.receiptHeader ?? null,
     receiptFooter: settings?.receiptFooter ?? "Thank you for your patronage!",
     receiptShowCashier: settings?.receiptShowCashier ?? true,

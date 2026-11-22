@@ -25,6 +25,7 @@ import {
 import type { SeatSummary, SeatUsage } from "@/lib/staff";
 
 import { Field, Sheet, Toggle } from "@/components/ui/Sheet";
+import { type ReceiptWidth } from "@/lib/receiptDesign";
 
 /**
  * Settings.
@@ -54,7 +55,7 @@ export interface SettingsValues {
 
   departmentsEnabled: boolean;
 
-  receiptWidth: "80mm" | "58mm";
+  receiptWidth: ReceiptWidth;
   receiptHeader: string | null;
   receiptFooter: string;
   receiptShowCashier: boolean;

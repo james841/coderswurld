@@ -1,6 +1,6 @@
 import { requireTenant } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { canDesignReceipt, parseReceiptDesign } from "@/lib/receiptDesign";
+import { canDesignReceipt, parseReceiptDesign, toReceiptWidth } from "@/lib/receiptDesign";
 import { NoAccess } from "@/components/ui/NoAccess";
 import { PageHeader } from "@/components/ui/PageHeader";
 
@@ -52,7 +52,7 @@ export default async function ReceiptDesignPage() {
         branchName={firstBranch?.name ?? "Main branch"}
         cashierName={user.name}
         initial={{
-          receiptWidth: settings?.receiptWidth === "58mm" ? "58mm" : "80mm",
+          receiptWidth: toReceiptWidth(settings?.receiptWidth),
           receiptHeader: settings?.receiptHeader ?? null,
           receiptFooter: settings?.receiptFooter ?? "Thank you for your patronage!",
           receiptShowCashier: settings?.receiptShowCashier ?? true,

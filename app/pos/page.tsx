@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { parseReceiptDesign } from "@/lib/receiptDesign";
+import { parseReceiptDesign, toReceiptWidth } from "@/lib/receiptDesign";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
@@ -111,7 +111,7 @@ export default async function PosPage() {
       vatEnabled: settings?.vatEnabled ?? false,
       vatBasisPoints: settings?.vatBasisPoints ?? 750,
       vatInclusive: settings?.vatInclusive ?? true,
-      receiptWidth: settings?.receiptWidth === "58mm" ? "58mm" : "80mm",
+      receiptWidth: toReceiptWidth(settings?.receiptWidth),
       receiptHeader: settings?.receiptHeader ?? null,
       receiptFooter: settings?.receiptFooter ?? "Thank you for your patronage!",
       receiptShowLogo: settings?.receiptShowLogo ?? false,
