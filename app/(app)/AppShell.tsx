@@ -34,6 +34,7 @@ import { Logo } from "@/components/Logo";
 import { EASE, m } from "@/components/motion";
 import { InstallAppButton } from "@/components/InstallAppButton";
 import { OfflineReady } from "@/components/OfflineReady";
+import { OfflineCopy } from "@/components/OfflineCopy";
 import { SignOutButton } from "@/components/SignOutButton";
 import { PERMISSIONS, ROLE_LABELS, type Permission, type Role } from "@/lib/constants";
 import { hasPermission } from "@/lib/permissions";
@@ -182,6 +183,7 @@ export function AppShell({
   branchName,
   unreadNotifications,
   initialTheme = "light",
+  offlineCopy,
   children,
 }: {
   user: ShellUser;
@@ -189,6 +191,8 @@ export function AppShell({
   branchName: string | null;
   unreadNotifications: number;
   initialTheme?: "light" | "dark";
+  /** Keep a read-only copy of products and stock here, for the Offline view. */
+  offlineCopy?: { orgId: string; branchId: string; orgName: string; branchName: string } | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -314,6 +318,9 @@ export function AppShell({
       {/* Saves the till for offline use in the background, for anyone who sells. */}
       <ChangeConfirm />
       <OfflineReady warmTill={canSell} />
+      {offlineCopy && (hasPermission(user, PERMISSIONS.PRODUCTS_VIEW) || hasPermission(user, PERMISSIONS.STOCK_VIEW) || canSell) ? (
+        <OfflineCopy {...offlineCopy} />
+      ) : null}
       {/* Desktop: a column that doesn't scroll with the page. */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 lg:block">{sidebar}</aside>
 

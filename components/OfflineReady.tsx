@@ -39,6 +39,9 @@ export function OfflineReady({ warmTill = false }: { warmTill?: boolean }) {
 
         if (warmTill && navigator.onLine) {
           registration.active.postMessage({ type: "WARM_TILL" });
+        } else if (navigator.onLine) {
+          // Not a till user: still keep the Offline view ready.
+          registration.active.postMessage({ type: "WARM_OFFLINE" });
         }
       } catch {
         // No worker (private window, old browser, blocked by policy). The app
@@ -59,6 +62,13 @@ export function OfflineReady({ warmTill = false }: { warmTill?: boolean }) {
  * shop's settings; the next person at this computer should not get it.
  */
 export async function forgetOfflineUser(): Promise<void> {
+  // The Offline view only shows a copy while someone is signed in on this
+  // computer. Signing out hides it (the till's unsent sales stay safe).
+  try {
+    window.localStorage.removeItem(OFFLINE_COPY_KEY);
+  } catch {
+    /* storage blocked */
+  }
   try {
     if (typeof caches !== "undefined") {
       const names = await caches.keys();
@@ -68,3 +78,6 @@ export async function forgetOfflineUser(): Promise<void> {
     // Nothing saved, or storage is unavailable — nothing to forget.
   }
 }
+
+/** Where this computer's read-only copy lives (a till database name). */
+export const OFFLINE_COPY_KEY = "cw:offline-copy";

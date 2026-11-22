@@ -1,5 +1,5 @@
 import path from "node:path";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 /**
  * Prisma 7 configuration.
@@ -21,6 +21,9 @@ try {
   // Falling through means DATABASE_URL just has to be set some other way.
 }
 
+const databaseUrl =
+  process.env.DIRECT_URL?.trim() || process.env.DATABASE_URL?.trim() || "";
+
 export default defineConfig({
   schema: path.join("prisma", "schema.prisma"),
 
@@ -28,9 +31,11 @@ export default defineConfig({
   // pooled DATABASE_URL. On Supabase: DIRECT_URL is the "Session pooler"
   // (port 5432) string, DATABASE_URL the "Transaction pooler" (port 6543) one.
   // Locally, leave DIRECT_URL unset and DATABASE_URL is used for both.
-  datasource: {
-    url: process.env.DIRECT_URL?.trim() || env("DATABASE_URL"),
-  },
+  //
+  // `prisma generate` (run on every Vercel install) does not need a database,
+  // so a missing URL must not stop the build. Commands that do need one
+  // (migrate, db push, studio) will still say clearly that it is missing.
+  ...(databaseUrl ? { datasource: { url: databaseUrl } } : {}),
 
   migrations: {
     path: path.join("prisma", "migrations"),

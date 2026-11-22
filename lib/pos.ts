@@ -52,6 +52,8 @@ export interface CatalogProduct {
   version: number;
   /** SUPERMARKET | PHARMACY. Missing on catalogues saved before departments. */
   department?: string;
+  /** Reorder level, for the Offline view's "low" filter. Missing on older copies. */
+  minStock?: number;
 }
 
 /** One branch stock figure. Short keys because this is the bulky part of a sync. */

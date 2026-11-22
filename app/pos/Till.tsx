@@ -41,13 +41,31 @@ import {
   listQueued,
   listStuck,
   loadCatalog,
+  markSaleSent,
   markStuck,
   queueCount,
+  rememberSale,
   retryStuck,
   runSync,
   type QueuedSale,
   type StoredProduct,
 } from "./catalog";
+
+/** The short record of a sale this device keeps for the Offline view. */
+function summarise(localId: string, r: ReceiptData, offline: boolean) {
+  return {
+    localId,
+    soldAt: r.soldAt,
+    receiptNo: r.receiptNo,
+    cashierName: r.cashierName,
+    totalKobo: r.totalKobo,
+    paidKobo: r.paidKobo,
+    balanceKobo: r.balanceKobo,
+    paymentMethod: r.paymentMethod,
+    items: r.items.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit, lineTotalKobo: i.lineTotalKobo })),
+    offline,
+  };
+}
 
 /** The server said 401: the sign-in has expired. Saved sales wait for the next one. */
 class SignInNeeded extends Error {}
@@ -396,6 +414,7 @@ export default function Till({
             const data = (await res.json()) as SaleResult;
             await applyStockDeltas(db, data.stock);
             await dropQueued(db, item.localId);
+            if (data.sale?.receiptNo) await markSaleSent(db, item.localId, data.sale.receiptNo);
           } else if (res.status === 409) {
             // Already recorded on the server: safe to let go.
             await dropQueued(db, item.localId);
@@ -969,7 +988,9 @@ export default function Till({
           for (const s of result.stock) m.set(s.p, s.q);
           return m;
         });
-        setReceipt(buildReceipt(result.sale, false));
+        const done = buildReceipt(result.sale, false);
+        setReceipt(done);
+        void rememberSale(db, summarise(localId, done, false));
         setPayOpen(false);
         setSubmitting(false);
         closeTicket(saleTicketId);
@@ -990,8 +1011,7 @@ export default function Till({
           return m;
         });
         setQueuedCount(await queueCount(db));
-        setReceipt(
-          buildReceipt(
+        const queuedReceipt = buildReceipt(
             {
               id: localId,
               receiptNo: "",
@@ -1009,8 +1029,9 @@ export default function Till({
               customerId: pay.customerId,
             },
             true,
-          ),
         );
+        setReceipt(queuedReceipt);
+        void rememberSale(db, summarise(localId, queuedReceipt, true));
         setPayOpen(false);
         setSubmitting(false);
         closeTicket(saleTicketId);

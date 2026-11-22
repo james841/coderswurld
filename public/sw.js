@@ -23,10 +23,12 @@
  * not part of the app bundle.
  */
 
-const VERSION = "v3"; // v3: new logo icons
+const VERSION = "v4"; // v4: the Offline view
 const STATIC_CACHE = `cw-static-${VERSION}`; // hashed build files: safe forever
 const PAGES_CACHE = `cw-pages-${VERSION}`; // the till's HTML: one entry
 const TILL_PATH = "/pos";
+/** The Offline view: products, stock and recent sales from this computer's saved copy. */
+const OFFLINE_PATH = "/offline";
 const MAX_STATIC_ENTRIES = 400;
 const NAVIGATION_TIMEOUT_MS = 5000;
 
@@ -91,13 +93,13 @@ function isKeepableTillPage(response) {
  * Called from the back office too, so the till is ready offline before the
  * cashier has even opened it for the first time.
  */
-async function warmTill() {
+async function warmPage(path) {
   try {
-    const response = await fetch(TILL_PATH, { credentials: "same-origin", cache: "no-store" });
+    const response = await fetch(path, { credentials: "same-origin", cache: "no-store" });
     if (!isKeepableTillPage(response)) return;
     const html = await response.clone().text();
     const pages = await caches.open(PAGES_CACHE);
-    await pages.put(TILL_PATH, response);
+    await pages.put(path, response);
     const found = html.match(/\/_next\/static\/[^"'\\\s)<>]+/g) || [];
     await cacheStatic([...new Set(found)]);
   } catch {
@@ -105,10 +107,17 @@ async function warmTill() {
   }
 }
 
+async function warmTill() {
+  await warmPage(TILL_PATH);
+  await warmPage(OFFLINE_PATH);
+}
+
 self.addEventListener("message", (event) => {
   const data = event.data || {};
   if (data.type === "WARM_TILL") {
     event.waitUntil(warmTill());
+  } else if (data.type === "WARM_OFFLINE") {
+    event.waitUntil(warmPage(OFFLINE_PATH));
   } else if (data.type === "CACHE_STATIC" && Array.isArray(data.urls)) {
     const urls = data.urls.filter((u) => {
       try {
@@ -158,11 +167,30 @@ async function handleTillNavigation(request) {
   }
 }
 
+async function handleOfflineViewNavigation(request) {
+  const pages = await caches.open(PAGES_CACHE);
+  try {
+    const response = await Promise.race([
+      fetch(request),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), NAVIGATION_TIMEOUT_MS)),
+    ]);
+    if (isKeepableTillPage(response)) await pages.put(OFFLINE_PATH, response.clone());
+    return response;
+  } catch {
+    return (await pages.match(OFFLINE_PATH)) || offlinePage(Boolean(await pages.match(TILL_PATH)));
+  }
+}
+
 async function handleOtherNavigation(request) {
   try {
     return await fetch(request);
   } catch {
     const pages = await caches.open(PAGES_CACHE);
+    // Back office with no internet: open the Offline view (saved products,
+    // stock and recent sales) instead of a dead end.
+    if (await pages.match(OFFLINE_PATH)) {
+      return Response.redirect(new URL(OFFLINE_PATH, self.location.origin).href, 302);
+    }
     const tillSaved = Boolean(await pages.match(TILL_PATH));
     // The installed app opens at /launch. With no network, go straight to the
     // saved till rather than an offline notice: selling is what matters then.
@@ -197,7 +225,11 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      url.pathname === TILL_PATH ? handleTillNavigation(request) : handleOtherNavigation(request),
+      url.pathname === TILL_PATH
+        ? handleTillNavigation(request)
+        : url.pathname === OFFLINE_PATH
+          ? handleOfflineViewNavigation(request)
+          : handleOtherNavigation(request),
     );
   }
   // Everything else (in-app data requests) goes straight to the network.

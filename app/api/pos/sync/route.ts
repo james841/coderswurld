@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { AppError, handle } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { requireTenantApi } from "@/lib/auth";
-import { requirePermission } from "@/lib/permissions";
+import { hasPermission, requirePermission } from "@/lib/permissions";
 import { PERMISSIONS } from "@/lib/constants";
 import type { CatalogProduct, CatalogStock, SyncResponse } from "@/lib/pos";
 
@@ -32,22 +32,47 @@ import type { CatalogProduct, CatalogStock, SyncResponse } from "@/lib/pos";
 export async function GET(request: Request) {
   return handle(async () => {
     const session = await requireTenantApi();
-    requirePermission(session.user, PERMISSIONS.POS_SELL);
-
-    if (!session.branch) {
-      throw new AppError(
-        "This till isn't attached to a shop branch, so it has no stock to sell.",
-        { status: 400 },
-      );
-    }
-    const branchId = session.branch.id;
+    const url = new URL(request.url);
     const orgId = session.org.id;
 
-    const url = new URL(request.url);
+    // view=1: a back-office computer keeping a read-only copy for the Offline
+    // view. Anyone who may see products or stock can have one; no till needed.
+    const view = url.searchParams.get("view") === "1";
+    let branchId: string;
+    if (view) {
+      if (
+        !hasPermission(session.user, PERMISSIONS.POS_SELL) &&
+        !hasPermission(session.user, PERMISSIONS.PRODUCTS_VIEW) &&
+        !hasPermission(session.user, PERMISSIONS.STOCK_VIEW)
+      ) {
+        throw new AppError("You don't have access to products or stock.", { status: 403 });
+      }
+      const main = session.branch
+        ? null
+        : await prisma.branch.findFirst({
+            where: { organizationId: orgId, isActive: true },
+            orderBy: [{ isMain: "desc" }, { createdAt: "asc" }],
+            select: { id: true },
+          });
+      const id = session.branch?.id ?? main?.id;
+      if (!id) throw new AppError("This shop has no branch yet.", { status: 400 });
+      branchId = id;
+    } else {
+      requirePermission(session.user, PERMISSIONS.POS_SELL);
+      if (!session.branch) {
+        throw new AppError(
+          "This till isn't attached to a shop branch, so it has no stock to sell.",
+          { status: 400 },
+        );
+      }
+      branchId = session.branch.id;
+    }
+
     const since = toInt(url.searchParams.get("since"), 0);
     const stockSinceRaw = url.searchParams.get("stockSince");
     const stockSince = parseDate(stockSinceRaw);
-    const deviceId = (url.searchParams.get("device") ?? "").trim() || null;
+    // A read-only copy is not a till: it doesn't show up in the device list.
+    const deviceId = view ? null : (url.searchParams.get("device") ?? "").trim() || null;
     const pending = toInt(url.searchParams.get("pending"), 0);
     const label = (url.searchParams.get("label") ?? "").trim() || null;
     const platform = (url.searchParams.get("platform") ?? "").trim() || null;
@@ -98,6 +123,7 @@ export async function GET(request: Request) {
         isActive: true,
         version: true,
         department: true,
+        minStock: true,
       },
       orderBy: { id: "asc" },
       take: limit + 1,
@@ -126,6 +152,7 @@ export async function GET(request: Request) {
       // department works the moment they reload, with no stale catalogue.
       // The sale route is what actually refuses the wrong department.
       department: p.department,
+      minStock: p.minStock,
     }));
 
     // Stock is the volatile half, paged on its own cursor. On a first sync,

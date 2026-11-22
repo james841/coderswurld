@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { requireTenant } from "@/lib/auth";
 import { countUnreadNotifications } from "@/lib/notifications";
+import { prisma } from "@/lib/db";
 import { AppShell } from "./AppShell";
 
 /**
@@ -41,6 +42,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const unread = await countUnreadNotifications(session.org.id, session.user);
+
+  // Which branch this computer keeps an offline copy of: the person's own
+  // branch, or the main one for someone who works across all of them.
+  const copyBranch =
+    session.branch ??
+    (await prisma.branch.findFirst({
+      where: { organizationId: session.org.id, isActive: true },
+      orderBy: [{ isMain: "desc" }, { createdAt: "asc" }],
+      select: { id: true, name: true },
+    }));
   // Read on the server so the page arrives already in the right theme, with no
   // white flash before switching to dark.
   const theme = (await cookies()).get("cw-theme")?.value === "dark" ? "dark" : "light";
@@ -55,6 +66,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       orgName={session.org.name}
       branchName={session.branch?.name ?? null}
       unreadNotifications={unread}
+      offlineCopy={
+        copyBranch
+          ? { orgId: session.org.id, branchId: copyBranch.id, orgName: session.org.name, branchName: copyBranch.name }
+          : null
+      }
       initialTheme={theme}
     >
       {children}

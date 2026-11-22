@@ -45,11 +45,34 @@ export interface QueuedSale {
   stuck?: string;
 }
 
-class PosDexie extends Dexie {
+/**
+ * A sale made on this device, kept so it can be looked at offline (the Offline
+ * view). A summary, not the full record: the server has that.
+ */
+export interface RecentSale {
+  localId: string;
+  soldAt: string;
+  /** null until the server has given it a number (made offline, not sent yet). */
+  receiptNo: string | null;
+  cashierName: string;
+  totalKobo: number;
+  paidKobo: number;
+  balanceKobo: number;
+  paymentMethod: string;
+  items: { name: string; quantity: number; unit: string; lineTotalKobo: number }[];
+  /** Still waiting to reach the server. */
+  offline: boolean;
+}
+
+/** How many recent sales each device keeps. */
+const RECENT_KEEP = 500;
+
+export class PosDexie extends Dexie {
   products!: Table<StoredProduct, string>;
   stock!: Table<StoredStock, string>;
   meta!: Table<StoredMeta, string>;
   queue!: Table<QueuedSale, string>;
+  recent!: Table<RecentSale, string>;
 
   constructor(name: string) {
     super(name);
@@ -62,6 +85,42 @@ class PosDexie extends Dexie {
       meta: "key",
       queue: "localId, createdAt",
     });
+    // v2: sales made on this device, for the Offline view.
+    this.version(2).stores({
+      products: "id, barcode, sku, name, categoryId",
+      stock: "productId",
+      meta: "key",
+      queue: "localId, createdAt",
+      recent: "localId, soldAt",
+    });
+  }
+}
+
+/** Open a saved till database by its full name (the Offline view does this). */
+export function openPosDbByName(name: string): PosDexie {
+  return new PosDexie(name);
+}
+
+/** Keep a short record of a sale made on this device. Never throws. */
+export async function rememberSale(db: PosDexie, sale: RecentSale): Promise<void> {
+  try {
+    await db.recent.put(sale);
+    const count = await db.recent.count();
+    if (count > RECENT_KEEP) {
+      const oldest = await db.recent.orderBy("soldAt").limit(count - RECENT_KEEP).primaryKeys();
+      await db.recent.bulkDelete(oldest);
+    }
+  } catch {
+    // Storage full or blocked: the sale itself is unaffected.
+  }
+}
+
+/** An offline sale reached the server: give it its real receipt number. */
+export async function markSaleSent(db: PosDexie, localId: string, receiptNo: string): Promise<void> {
+  try {
+    await db.recent.update(localId, { receiptNo, offline: false });
+  } catch {
+    /* not kept here, nothing to update */
   }
 }
 
@@ -149,9 +208,12 @@ export async function runSync(
   deviceId: string,
   pendingCount: number,
   onProgress?: (done: number, total: number) => void,
+  /** A back-office computer's read-only copy, not a till. */
+  viewOnly = false,
 ): Promise<SyncOutcome> {
   const cursors = await readCursors(db);
   const base = new URLSearchParams();
+  if (viewOnly) base.set("view", "1");
   base.set("since", String(cursors.catalogVersion));
   if (cursors.stockSince) base.set("stockSince", cursors.stockSince);
   base.set("device", deviceId);
@@ -220,6 +282,7 @@ export async function runSync(
   await db.meta.bulkPut([
     { key: "catalogVersion", value: String(first!.catalogVersion) },
     { key: "stockSince", value: first!.serverTime },
+    { key: "syncedAt", value: new Date().toISOString() },
   ]);
 
   return {
