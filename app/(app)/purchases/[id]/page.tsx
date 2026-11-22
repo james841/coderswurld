@@ -139,23 +139,16 @@ export default async function PurchaseDetailPage({
   });
   const canFileReceipt = hasPermission(user, PERMISSIONS.RECEIPTS_MANAGE);
 
-  // Correcting needs the products and suppliers to pick from; only load them
-  // for people allowed to correct.
+  // Correcting needs the suppliers to pick from (products are searched on the
+  // server as they type); only load them for people allowed to correct.
   const canCorrect = hasPermission(user, PERMISSIONS.PURCHASES_MANAGE) && purchase.status !== "CANCELLED";
-  const [pickProducts, pickSuppliers] = canCorrect
-    ? await Promise.all([
-        prisma.product.findMany({
-          where: { organizationId: org.id, isActive: true },
-          orderBy: { name: "asc" },
-          select: { id: true, name: true, sku: true, barcode: true, unit: true, costPriceKobo: true },
-        }),
-        prisma.supplier.findMany({
-          where: { organizationId: org.id, isActive: true },
-          orderBy: { name: "asc" },
-          select: { id: true, name: true },
-        }),
-      ])
-    : [[], []];
+  const pickSuppliers = canCorrect
+    ? await prisma.supplier.findMany({
+        where: { organizationId: org.id, isActive: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : [];
 
   const fmtWhen = new Intl.DateTimeFormat("en-NG", { timeZone: org.timezone, dateStyle: "medium", timeStyle: "short" });
   const history = purchase.changes.map((c) => {
@@ -183,7 +176,7 @@ export default async function PurchaseDetailPage({
         timezone={org.timezone}
         actions={
           canCorrect ? (
-            <PurchaseActions purchase={detail} products={pickProducts} suppliers={pickSuppliers} />
+            <PurchaseActions purchase={detail} suppliers={pickSuppliers} />
           ) : undefined
         }
       />

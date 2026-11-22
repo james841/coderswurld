@@ -1,3 +1,4 @@
+import { ConsoleHeading } from "../../ConsoleHeading";
 import { CheckCircle2, Mail, XCircle, AlertTriangle } from "lucide-react";
 
 import { prisma } from "@/lib/db";
@@ -37,11 +38,10 @@ export default async function EmailPage() {
   if (!setup.appUrl) problems.push("NEXT_PUBLIC_APP_URL is empty, so links and the logo in emails point to the wrong site. Set it to your live address.");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 lg:p-8">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-ink-950">Email</h1>
-        <p className="mt-1 text-sm text-ink-600">Check your email setup, send yourself a test, and see every email the app sent.</p>
-      </div>
+    <div className="space-y-6">
+      <ConsoleHeading icon={Mail} title="Email">
+          Check your email setup, send yourself a test, and see every email the app sent.
+        </ConsoleHeading>
 
       {problems.length > 0 && (
         <div className="space-y-2 rounded-2xl border border-bad-100 bg-bad-50 p-4">

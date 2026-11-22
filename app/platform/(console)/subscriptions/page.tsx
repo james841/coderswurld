@@ -1,14 +1,7 @@
+import { ConsoleHeading } from "../../ConsoleHeading";
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowRight,
-  CalendarClock,
-  CircleCheck,
-  Phone,
-  TrendingUp,
-  Wallet,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarClock, CircleCheck, Phone, TrendingUp, Wallet, Receipt } from "lucide-react";
 
 import { prisma } from "@/lib/db";
 import { daysBetween, formatDate } from "@/lib/dates";
@@ -117,12 +110,9 @@ export default async function SubscriptionsPage() {
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight text-ink-950">Renewals</h1>
-        <p className="mt-0.5 text-sm text-ink-500">
+      <ConsoleHeading icon={Receipt} title="Renewals and payments">
           Everything expiring in the next {SOON_DAYS} days, most urgent first.
-        </p>
-      </header>
+        </ConsoleHeading>
 
       {/* ── Money ─────────────────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

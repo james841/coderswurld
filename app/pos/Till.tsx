@@ -197,6 +197,8 @@ export default function Till({
   /** Offline sales the server refused; kept on this device until retried. */
   const [stuck, setStuck] = useState<QueuedSale[]>([]);
   const [signInNeeded, setSignInNeeded] = useState(false);
+  /** A big catalogue's first download, page by page. */
+  const [download, setDownload] = useState<{ done: number; total: number } | null>(null);
 
   // Sale in progress.
   const [search, setSearch] = useState("");
@@ -326,7 +328,7 @@ export default function Till({
         // which is a real risk over weeks offline. Silently ignored if refused.
         void navigator.storage?.persist?.().catch(() => false);
 
-        await runSync(db, deviceIdRef.current, pending);
+        await runSync(db, deviceIdRef.current, pending, (done, total) => setDownload({ done, total }));
         const fresh = await loadCatalog(db);
         if (!cancelled) {
           setProducts(fresh.products);
@@ -424,7 +426,7 @@ export default function Till({
         setSyncing(true);
         await flushQueue();
         const pending = await queueCount(db);
-        const out = await runSync(db, deviceIdRef.current, pending);
+        const out = await runSync(db, deviceIdRef.current, pending, (done, total) => setDownload({ done, total }));
         if (!stopped && (out.changed || out.stockChanged)) {
           const fresh = await loadCatalog(db);
           setProducts(fresh.products);
@@ -1053,6 +1055,20 @@ export default function Till({
           aria-hidden
         />
         <p className="text-sm text-white/70">Setting up your products…</p>
+        {download && download.total > 0 && (
+          <div className="w-72 text-center">
+            <div className="h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
+                style={{ width: `${Math.min(100, Math.round((download.done / download.total) * 100))}%` }}
+              />
+            </div>
+            <p className="mt-2 text-xs text-white/60">
+              {download.done.toLocaleString("en-NG")} of {download.total.toLocaleString("en-NG")} products. Only the
+              first time on this computer.
+            </p>
+          </div>
+        )}
       </main>
     );
   }
@@ -1123,6 +1139,24 @@ export default function Till({
             </button>
           </div>
         </header>
+
+        {download && download.done < download.total && (
+          <div className="shrink-0 border-b border-navy-100 bg-navy-50 px-3 py-2 text-sm text-navy-800 sm:px-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold">
+                Downloading products to this till: {download.done.toLocaleString("en-NG")} of{" "}
+                {download.total.toLocaleString("en-NG")}
+              </span>
+              <span className="text-xs">Only the first time. After this, only changes come down.</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-navy-100">
+              <div
+                className="h-full rounded-full bg-navy-600 transition-[width] duration-300"
+                style={{ width: `${Math.round((download.done / download.total) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {(stuck.length > 0 || signInNeeded) && (
           <div className="shrink-0 space-y-1 border-b border-warn-200 bg-warn-50 px-3 py-2 text-sm text-warn-700 sm:px-4">

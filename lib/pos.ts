@@ -78,6 +78,15 @@ export interface SyncResponse {
   stockFull: boolean;
   /** ISO. The client stores this and sends it back as the next stock cursor. */
   serverTime: string;
+  /** More pages to fetch: ask again with nextAfter / nextStockAfter. */
+  more: boolean;
+  nextAfter: string | null;
+  nextStockAfter: string | null;
+  /** This page finished the products (or the stock): send no cursor for it again. */
+  productsDone: boolean;
+  stockDone: boolean;
+  /** On the first page of a big download: how many products are coming. */
+  total: number | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -148,46 +148,85 @@ export async function runSync(
   db: PosDexie,
   deviceId: string,
   pendingCount: number,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<SyncOutcome> {
   const cursors = await readCursors(db);
-  const params = new URLSearchParams();
-  params.set("since", String(cursors.catalogVersion));
-  if (cursors.stockSince) params.set("stockSince", cursors.stockSince);
-  params.set("device", deviceId);
-  params.set("pending", String(pendingCount));
+  const base = new URLSearchParams();
+  base.set("since", String(cursors.catalogVersion));
+  if (cursors.stockSince) base.set("stockSince", cursors.stockSince);
+  base.set("device", deviceId);
+  base.set("pending", String(pendingCount));
   const platform = devicePlatform();
-  if (platform) params.set("platform", platform);
+  if (platform) base.set("platform", platform);
 
-  const res = await fetch(`/api/pos/sync?${params.toString()}`, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Sync failed (${res.status})`);
-  }
-  const data = (await res.json()) as SyncResponse;
+  // A big catalogue arrives in pages (about 2,500 products each). Keep asking
+  // until the server says there is no more. The cursors from the FIRST page
+  // are the ones saved: anything that changed while paging gets a newer
+  // version or time, so the next sync picks it up.
+  let first: SyncResponse | null = null;
+  let after: string | null = null;
+  let stockAfter: string | null = null;
+  let productsDone = false;
+  let stockDone = false;
+  let changed = 0;
+  let stockChanged = 0;
+  let total = 0;
 
-  const deactivated = data.upserts.filter((p) => !p.isActive).map((p) => p.id);
-  const active = data.upserts.filter((p) => p.isActive);
+  for (let page = 0; page < 1000; page++) {
+    const params = new URLSearchParams(base);
+    if (after) params.set("after", after);
+    if (stockAfter) params.set("stockAfter", stockAfter);
+    if (productsDone) params.set("productsDone", "1");
+    if (stockDone) params.set("stockDone", "1");
 
-  await db.transaction("rw", db.products, db.stock, db.meta, async () => {
-    if (data.full) await db.products.clear();
-    if (active.length) await db.products.bulkPut(active);
-    if (deactivated.length) await db.products.bulkDelete(deactivated);
-
-    if (data.stockFull) await db.stock.clear();
-    if (data.stock.length) {
-      await db.stock.bulkPut(data.stock.map((s) => ({ productId: s.p, quantity: s.q })));
+    const res = await fetch(`/api/pos/sync?${params.toString()}`, { cache: "no-store" });
+    if (!res.ok) {
+      throw new Error(`Sync failed (${res.status})`);
+    }
+    const data = (await res.json()) as SyncResponse;
+    if (!first) {
+      first = data;
+      total = data.total ?? data.upserts.length;
     }
 
-    await db.meta.bulkPut([
-      { key: "catalogVersion", value: String(data.catalogVersion) },
-      { key: "stockSince", value: data.serverTime },
-    ]);
-  });
+    const deactivated = data.upserts.filter((p) => !p.isActive).map((p) => p.id);
+    const active = data.upserts.filter((p) => p.isActive);
+    const isFirst = page === 0;
+
+    await db.transaction("rw", db.products, db.stock, async () => {
+      if (isFirst && data.full) await db.products.clear();
+      if (active.length) await db.products.bulkPut(active);
+      if (deactivated.length) await db.products.bulkDelete(deactivated);
+
+      if (isFirst && data.stockFull) await db.stock.clear();
+      if (data.stock.length) {
+        await db.stock.bulkPut(data.stock.map((s) => ({ productId: s.p, quantity: s.q })));
+      }
+    });
+
+    changed += data.upserts.length;
+    stockChanged += data.stock.length;
+    if (total > 2500) onProgress?.(changed, total);
+
+    if (!data.more) break;
+    after = data.nextAfter ?? after;
+    stockAfter = data.nextStockAfter ?? stockAfter;
+    productsDone = productsDone || data.productsDone;
+    stockDone = stockDone || data.stockDone;
+  }
+
+  // Only now, with every page stored, move the cursors forward. If the
+  // download stops halfway (network drop), the next sync starts it again.
+  await db.meta.bulkPut([
+    { key: "catalogVersion", value: String(first!.catalogVersion) },
+    { key: "stockSince", value: first!.serverTime },
+  ]);
 
   return {
-    catalogVersion: data.catalogVersion,
-    changed: data.upserts.length,
-    stockChanged: data.stock.length,
-    full: data.full,
+    catalogVersion: first!.catalogVersion,
+    changed,
+    stockChanged,
+    full: first!.full,
   };
 }
 

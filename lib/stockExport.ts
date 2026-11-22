@@ -258,6 +258,12 @@ export async function renderXlsx(data: StockExport): Promise<Buffer> {
     r.eachCell((c) => (c.border = { top: { style: strong ? "medium" : "thin", color: { argb: NAVY } } }));
   };
 
+  // Number formats once per column, not once per cell: much faster on big files.
+  [8, 9, 10, 11].forEach((c) => (ws.getColumn(c).numFmt = money));
+  ws.getColumn(12).numFmt = "dd mmm yyyy";
+  const rowCount = data.sections.reduce((t, sec) => t + sec.groups.reduce((u, g) => u + g.rows.length, 0), 0);
+  const zebra = rowCount <= 20_000;
+
   for (const sec of data.sections) {
     if (data.sections.length > 1 || sec.title !== "All products") band(sec.title.toUpperCase(), NAVY, "FFFFFFFF", 12);
     let n = 0;
@@ -270,10 +276,10 @@ export async function renderXlsx(data: StockExport): Promise<Buffer> {
           r.costKobo / 100, r.priceKobo / 100, r.costValueKobo / 100, r.retailValueKobo / 100,
           r.expiryDate ?? "", STATUS_LABEL[r.status],
         ]);
-        [8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = money));
-        row.getCell(12).numFmt = "dd mmm yyyy";
         if (r.status !== "OK") row.getCell(13).font = { bold: true, color: { argb: r.status === "OUT" ? "FFB91C1C" : "FFB45309" } };
-        if (i % 2 === 1) row.eachCell((c) => (c.fill = solid("FFF7F8FC")));
+        // Striped rows help reading, but styling every cell of a 200,000-row
+        // file takes most of a minute; big files go plain.
+        if (zebra && i % 2 === 1) row.eachCell((c) => (c.fill = solid("FFF7F8FC")));
       });
       totalRow(`${g.category} total`, g.totals, false);
     }
@@ -600,4 +606,9 @@ export async function renderDocx(data: StockExport): Promise<Buffer> {
     ],
   });
   return Buffer.from(await Packer.toBuffer(doc));
+}
+
+/** How many product rows an export holds. */
+export function exportRowCount(data: StockExport): number {
+  return data.sections.reduce((t, sec) => t + sec.groups.reduce((u, g) => u + g.rows.length, 0), 0);
 }

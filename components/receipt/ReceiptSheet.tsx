@@ -206,7 +206,7 @@ export function ReceiptSheet({
         {settings.receiptFooter ? <div className="r-footer">{settings.receiptFooter}</div> : null}
         {design.extraLine ? <div className="r-muted">{design.extraLine}</div> : null}
         {design.showBarcode && data.receiptNo ? (
-          <div className="r-barcode">
+          <div className="r-barcode" data-value={data.receiptNo}>
             <Barcode value={data.receiptNo} symbology="CODE128" moduleWidth={1.6} height={40} fontSize={11} />
           </div>
         ) : null}

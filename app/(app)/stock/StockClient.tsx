@@ -56,6 +56,7 @@ export function StockClient({
   canAdjust,
   timezone,
   truncated,
+  serverMode,
 }: {
   rows: StockRow[];
   branches: { id: string; name: string; code: string }[];
@@ -65,9 +66,15 @@ export function StockClient({
   canAdjust: boolean;
   timezone: string;
   truncated: boolean;
+  /**
+   * A big shop: rows are already searched and filtered on the server, and the
+   * counts come from there too. Typing and the filter chips update the address
+   * instead of filtering in the browser.
+   */
+  serverMode: { counts: { all: number; low: number; out: number }; query: string } | null;
 }) {
   const router = useRouter();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(serverMode?.query ?? "");
   const [filter, setFilter] = useState<Filter>(initialFilter);
   const [adjusting, setAdjusting] = useState<StockRow | null>(null);
 
@@ -85,7 +92,30 @@ export function StockClient({
     return () => cancelAnimationFrame(id);
   }, []);
 
+  // Big shop: send the search to the server a moment after typing stops.
+  useEffect(() => {
+    if (!serverMode) return;
+    if (search.trim() === serverMode.query) return;
+    const id = setTimeout(() => {
+      const params = new URLSearchParams({ branch: selectedBranchId });
+      if (filter !== "all") params.set("filter", filter);
+      if (search.trim()) params.set("q", search.trim());
+      router.replace(`/stock?${params}`);
+    }, 350);
+    return () => clearTimeout(id);
+  }, [search, serverMode, filter, selectedBranchId, router]);
+
+  function chooseFilter(next: Filter) {
+    setFilter(next);
+    if (!serverMode) return;
+    const params = new URLSearchParams({ branch: selectedBranchId });
+    if (next !== "all") params.set("filter", next);
+    if (search.trim()) params.set("q", search.trim());
+    router.replace(`/stock?${params}`);
+  }
+
   const counts = useMemo(() => {
+    if (serverMode) return serverMode.counts;
     let low = 0;
     let out = 0;
     for (const r of rows) {
@@ -94,9 +124,10 @@ export function StockClient({
       else if (s === "low") low += 1;
     }
     return { all: rows.length, low, out };
-  }, [rows]);
+  }, [rows, serverMode]);
 
   const filtered = useMemo(() => {
+    if (serverMode) return rows;
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       const s = statusOf(r);
@@ -105,7 +136,7 @@ export function StockClient({
       if (!q) return true;
       return r.name.toLowerCase().includes(q) || r.sku.toLowerCase().includes(q);
     });
-  }, [rows, search, filter]);
+  }, [rows, search, filter, serverMode]);
 
   function changeBranch(id: string) {
     const query = filter === "all" ? "" : `&filter=${filter}`;
@@ -144,9 +175,9 @@ export function StockClient({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <FilterChip label="All" count={counts.all} active={filter === "all"} onClick={() => setFilter("all")} />
-        <FilterChip label="Low" count={counts.low} active={filter === "low"} onClick={() => setFilter("low")} />
-        <FilterChip label="Out" count={counts.out} active={filter === "out"} onClick={() => setFilter("out")} />
+        <FilterChip label="All" count={counts.all} active={filter === "all"} onClick={() => chooseFilter("all")} />
+        <FilterChip label="Low" count={counts.low} active={filter === "low"} onClick={() => chooseFilter("low")} />
+        <FilterChip label="Out" count={counts.out} active={filter === "out"} onClick={() => chooseFilter("out")} />
       </div>
 
       {filtered.length === 0 ? (
@@ -264,7 +295,9 @@ export function StockClient({
 
       {truncated && (
         <p className="text-center text-xs text-ink-400">
-          Showing the first {fmtQty.format(rows.length)} products. Use search to find the rest.
+          Showing the first {fmtQty.format(rows.length)}
+          {serverMode ? ` of ${fmtQty.format(filter === "all" ? counts.all : filter === "low" ? counts.low : counts.out)}` : ""}{" "}
+          products. Use search to find the rest.
         </p>
       )}
 

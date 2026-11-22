@@ -15,6 +15,7 @@ import {
 import { formatNaira, parseMoneyInput } from "@/lib/money";
 import { PRODUCT_UNITS } from "@/lib/constants";
 import { useBarcodeScanner } from "../../products/useBarcodeScanner";
+import { findByBarcode, useProductSearch, type PickProduct } from "../useProductSearch";
 
 /**
  * Record goods received.
@@ -35,14 +36,7 @@ import { useBarcodeScanner } from "../../products/useBarcodeScanner";
  * preview; the money that lands in the ledger is the server's arithmetic alone.
  */
 
-export interface PickProduct {
-  id: string;
-  name: string;
-  sku: string;
-  barcode: string | null;
-  unit: string;
-  costPriceKobo: number;
-}
+export type { PickProduct };
 
 export interface PickSupplier {
   id: string;
@@ -161,12 +155,7 @@ export function NewPurchaseClient({
   const otherKobo = kobo(other);
   const totalKobo = subtotalKobo + transportKobo + otherKobo;
 
-  // ── Product lookup ────────────────────────────────────────────────────────
-  const byBarcode = useMemo(() => {
-    const m = new Map<string, PickProduct>();
-    for (const p of products) if (p.barcode) m.set(p.barcode, p);
-    return m;
-  }, [products]);
+  // ── Product lookup: on the server, so a huge catalogue never loads here ───
 
   function addProduct(p: PickProduct) {
     setLines((prev) => {
@@ -220,8 +209,8 @@ export function NewPurchaseClient({
     if (scanTimer.current) clearTimeout(scanTimer.current);
   }, []);
 
-  useBarcodeScanner((code) => {
-    const found = byBarcode.get(code.trim());
+  useBarcodeScanner(async (code) => {
+    const found = await findByBarcode(code);
     if (found) {
       addProduct(found);
       flash(`Added ${found.name}`);
@@ -232,18 +221,7 @@ export function NewPurchaseClient({
   });
 
   // ── Search box ──────────────────────────────────────────────────────────────
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return products
-      .filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          (p.barcode?.toLowerCase().includes(q) ?? false),
-      )
-      .slice(0, 8);
-  }, [products, query]);
+  const { results } = useProductSearch(query);
 
   function setField<K extends string>(key: K, patch: () => void) {
     patch();

@@ -49,7 +49,7 @@ export default async function ReorderPage({
     branches[0]?.id ??
     "";
 
-  const rows = branchId
+  const allRows = branchId
     ? await buildReorderList({
         organizationId: org.id,
         branchId,
@@ -59,6 +59,10 @@ export default async function ReorderPage({
         defaultLowStock: settings?.defaultLowStock ?? 5,
       })
     : [];
+  // The most urgent first; a screen of thousands helps nobody place an order.
+  const SHOW = 500;
+  const rows = allRows.slice(0, SHOW);
+  const hidden = allRows.length - rows.length;
 
   // One card per supplier, since that is how the ordering actually happens.
   const groups = new Map<string, { name: string; phone: string | null; supplierId: string | null; rows: ReorderRow[] }>();
@@ -79,6 +83,13 @@ export default async function ReorderPage({
         title="What to reorder"
         subtitle={`Worked out from the last ${LOOKBACK_DAYS} days of sales. Enough to last ${cover} days, plus ${LEAD_DAYS} days for delivery.`}
       />
+
+      {hidden > 0 ? (
+        <p className="rounded-xl border border-warn-200 bg-warn-50 px-4 py-2.5 text-sm text-warn-700">
+          Showing the {SHOW} most urgent of {allRows.length.toLocaleString("en-NG")} products to reorder. Order these
+          first; the rest move up as these arrive.
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <nav className="flex rounded-full bg-white p-1 shadow-sm ring-1 ring-hairline" aria-label="How long the order should last">

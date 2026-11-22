@@ -7,6 +7,10 @@ import { ReceiptSheet, type ReceiptSheetData } from "@/components/receipt/Receip
 import { formatNaira } from "@/lib/money";
 import { PAYMENT_METHOD_LABELS } from "@/lib/constants";
 import { receiptPhones, type ReceiptDesign } from "@/lib/receiptDesign";
+import { printReceipt } from "@/lib/printReceipt";
+
+/** The receipt on screen in this dialog. */
+const sheetEl = () => document.querySelector<HTMLElement>(".print-root .receipt-sheet");
 
 export interface ReceiptData extends ReceiptSheetData {
   soldAt: string;
@@ -45,7 +49,7 @@ export default function Receipt({
   // paint before the print dialog grabs it.
   useEffect(() => {
     if (!settings.receiptAutoPrint) return;
-    const id = window.setTimeout(() => window.print(), 300);
+    const id = window.setTimeout(() => void printReceipt(sheetEl()), 300);
     return () => window.clearTimeout(id);
   }, [settings.receiptAutoPrint]);
 
@@ -89,7 +93,7 @@ export default function Receipt({
       else if (e.key === "Enter") {
         e.preventDefault();
         onClose();
-      } else if (e.key.toLowerCase() === "p") window.print();
+      } else if (e.key.toLowerCase() === "p") void printReceipt(sheetEl());
       else if (e.key.toLowerCase() === "w") openWhatsApp();
     }
     window.addEventListener("keydown", onKey);
@@ -186,7 +190,7 @@ export default function Receipt({
 
         {/* ── Actions ─────────────────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-2 border-t border-hairline p-4">
-          <button type="button" onClick={() => window.print()} className="btn btn-dark">
+          <button type="button" onClick={() => void printReceipt(sheetEl())} className="btn btn-dark">
             <Printer className="h-4 w-4" aria-hidden />
             Print
           </button>

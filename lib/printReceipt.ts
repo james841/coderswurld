@@ -13,7 +13,53 @@
  *
  * Works with Chrome's --kiosk-printing (silent printing) like a normal print.
  */
-export function printReceipt(sheet: HTMLElement | null): void {
+import { sheetToEscPos } from "./escpos";
+import { getDirectPrint, sendToPrinter } from "./directPrint";
+
+/** A short message in the corner, for print results. Plain DOM: works on any page. */
+function notice(text: string, tone: "good" | "bad") {
+  document.getElementById("cw-print-notice")?.remove();
+  const el = document.createElement("div");
+  el.id = "cw-print-notice";
+  el.setAttribute("role", "status");
+  el.textContent = text;
+  el.style.cssText = `position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;max-width:min(92vw,520px);
+    padding:12px 16px;border-radius:14px;font:600 14px/1.4 system-ui,sans-serif;color:#fff;
+    background:${tone === "good" ? "#15803d" : "#b91c1c"};box-shadow:0 10px 30px rgba(0,0,0,.25);
+    transition:opacity .3s, transform .3s;opacity:0`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => (el.style.opacity = "1"));
+  setTimeout(() => {
+    el.style.opacity = "0";
+    setTimeout(() => el.remove(), 400);
+  }, tone === "good" ? 2200 : 7000);
+}
+
+/**
+ * Print a receipt. With direct printing switched on for this computer, it goes
+ * straight to the printer through the Coderswurld Print Helper: no window.
+ * Otherwise, or if direct printing fails, the browser's print window opens.
+ */
+export async function printReceipt(sheet: HTMLElement | null): Promise<void> {
+  const direct = getDirectPrint();
+  if (direct.enabled && sheet) {
+    try {
+      const bytes = await sheetToEscPos(sheet, { openDrawer: direct.openDrawer });
+      await sendToPrinter(bytes, direct);
+      notice("Sent to the printer", "good");
+      return;
+    } catch (error) {
+      notice(
+        `Direct printing failed: ${error instanceof Error ? error.message : "unknown error"} Opening the normal print window instead.`,
+        "bad",
+      );
+    }
+  }
+  browserPrint(sheet);
+}
+
+/** The browser's own print window, showing just this receipt. */
+function browserPrint(sheet: HTMLElement | null): void {
   if (!sheet) {
     window.print();
     return;

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { ReceiptSheet, type ReceiptSheetData, type ReceiptSheetSettings } from "@/components/receipt/ReceiptSheet";
+import { DirectPrintPanel } from "./DirectPrintPanel";
 import { printReceipt } from "@/lib/printReceipt";
 import type { ReceiptDesign } from "@/lib/receiptDesign";
 
@@ -114,7 +115,7 @@ function PrinterCard({
         </div>
         <button
           type="button"
-          onClick={() => printReceipt(sheetRef.current?.querySelector(".receipt-sheet") as HTMLElement | null)}
+          onClick={() => void printReceipt(sheetRef.current?.querySelector(".receipt-sheet") as HTMLElement | null)}
           className="btn btn-primary"
         >
           <Printer className="size-4" />
@@ -146,6 +147,7 @@ function PrinterCard({
           </div>
         </div>
       </div>
+      <DirectPrintPanel getSheet={() => sheetRef.current?.querySelector(".receipt-sheet") as HTMLElement | null} />
     </section>
   );
 }

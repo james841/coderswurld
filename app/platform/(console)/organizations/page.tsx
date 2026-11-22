@@ -1,3 +1,4 @@
+import { ConsoleHeading } from "../../ConsoleHeading";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
@@ -144,14 +145,11 @@ export default async function OrganizationsPage({
   return (
     <div className="space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink-950">Businesses</h1>
-          <p className="mt-0.5 text-sm text-ink-500">
-            {allCount === 0
+        <ConsoleHeading icon={Building2} title="Businesses">
+          {allCount === 0
               ? "No businesses yet."
               : `${allCount.toLocaleString()} ${allCount === 1 ? "business" : "businesses"} on the platform.`}
-          </p>
-        </div>
+        </ConsoleHeading>
         <Link href="/platform/organizations/new" className="btn btn-primary btn-sm">
           <Plus className="size-4" />
           Add a business

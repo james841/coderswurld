@@ -180,7 +180,7 @@ export function SaleDetailClient({
 
           <button
             type="button"
-            onClick={() => printReceipt(document.querySelector("#sale-receipt .receipt-sheet"))}
+            onClick={() => void printReceipt(document.querySelector("#sale-receipt .receipt-sheet"))}
             className="btn btn-dark mt-3 w-full"
           >
             <Printer className="size-4" />

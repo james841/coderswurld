@@ -1,4 +1,5 @@
 import { requirePlatform } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { ChangeConfirm } from "@/components/ChangeConfirm";
 import { PlatformNav } from "../PlatformNav";
 
@@ -29,10 +30,18 @@ export default async function PlatformConsoleLayout({
   children,
 }: LayoutProps<"/platform">) {
   const session = await requirePlatform();
+  const now = new Date();
+  const [requests, renewals, failedEmails] = await Promise.all([
+    prisma.lead.count({ where: { status: { in: ["NEW", "CLAIMED", "PAID"] } } }),
+    prisma.subscription.count({
+      where: { status: "ACTIVE", expiresAt: { gte: now, lt: new Date(now.getTime() + 30 * 86_400_000) } },
+    }),
+    prisma.emailLog.count({ where: { ok: false, createdAt: { gte: new Date(now.getTime() - 7 * 86_400_000) } } }),
+  ]);
 
   return (
     <div className="min-h-dvh bg-canvas">
-      <PlatformNav operatorName={session.name} />
+      <PlatformNav operatorName={session.name} counts={{ requests, renewals, failedEmails }} />
       <ChangeConfirm />
       <div className="flex min-h-dvh flex-col lg:pl-64">
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:py-8">{children}</main>

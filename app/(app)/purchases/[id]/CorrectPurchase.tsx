@@ -9,6 +9,7 @@ import { m, EASE } from "@/components/motion";
 import { formatNaira, parseMoneyInput } from "@/lib/money";
 import { useBarcodeScanner } from "../../products/useBarcodeScanner";
 import type { PurchaseDetail } from "./PurchaseDetailClient";
+import { findByBarcode, useProductSearch, type PickProduct } from "../useProductSearch";
 
 /**
  * Correct a purchase that was entered wrongly, or cancel one that should not
@@ -16,14 +17,6 @@ import type { PurchaseDetail } from "./PurchaseDetailClient";
  * balance follows the new total, and the reason is kept in the history.
  */
 
-export interface PickProduct {
-  id: string;
-  name: string;
-  sku: string;
-  barcode: string | null;
-  unit: string;
-  costPriceKobo: number;
-}
 
 interface Line {
   key: string;
@@ -49,11 +42,9 @@ const toQty = (raw: string) => {
 
 export function PurchaseActions({
   purchase,
-  products,
   suppliers,
 }: {
   purchase: PurchaseDetail;
-  products: PickProduct[];
   suppliers: { id: string; name: string }[];
 }) {
   const [mode, setMode] = useState<"none" | "correct" | "cancel">("none");
@@ -77,7 +68,6 @@ export function PurchaseActions({
           <CorrectSheet
             key="correct"
             purchase={purchase}
-            products={products}
             suppliers={suppliers}
             onClose={() => setMode("none")}
           />
@@ -143,12 +133,10 @@ function Shell({
 
 function CorrectSheet({
   purchase: p,
-  products,
   suppliers,
   onClose,
 }: {
   purchase: PurchaseDetail;
-  products: PickProduct[];
   suppliers: { id: string; name: string }[];
   onClose: () => void;
 }) {
@@ -184,13 +172,7 @@ function CorrectSheet({
     [suppliers, p.supplier],
   );
 
-  const matches = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (q.length < 2) return [];
-    return products
-      .filter((x) => x.name.toLowerCase().includes(q) || x.sku.toLowerCase().includes(q) || x.barcode === q)
-      .slice(0, 8);
-  }, [search, products]);
+  const { results: matches } = useProductSearch(search);
 
   function addProduct(prod: PickProduct) {
     setLines((prev) => [
@@ -210,8 +192,8 @@ function CorrectSheet({
     setSearch("");
   }
 
-  useBarcodeScanner((code) => {
-    const prod = products.find((x) => x.barcode === code);
+  useBarcodeScanner(async (code) => {
+    const prod = await findByBarcode(code);
     if (prod) addProduct(prod);
     else setError(`No product has the barcode ${code}.`);
   });

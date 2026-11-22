@@ -7,7 +7,7 @@ import { PERMISSIONS, SEES_ALL_DEPARTMENTS } from "@/lib/constants";
 import { prisma } from "@/lib/db";
 import { requirePermission } from "@/lib/permissions";
 import { pinnedBranch } from "@/lib/branchScope";
-import { buildStockExport, exportFileName, renderDocx, renderPdf, renderXlsx } from "@/lib/stockExport";
+import { buildStockExport, exportFileName, renderDocx, exportRowCount, renderPdf, renderXlsx } from "@/lib/stockExport";
 
 /** Big files and many shops take longer than an ordinary request (seconds). */
 export const maxDuration = 60;
@@ -35,6 +35,9 @@ const TYPES = {
   pdf: "application/pdf",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 } as const;
+
+/** Most a PDF or Word export will hold. */
+const PRINTABLE_ROWS = 20_000;
 
 export async function GET(request: Request) {
   return handle(async () => {
@@ -74,9 +77,35 @@ export async function GET(request: Request) {
       defaultLowStock: settings?.defaultLowStock ?? 5,
     });
 
+    // A PDF or Word file of 200,000 products is thousands of pages that nobody
+    // can print or open comfortably. Excel handles any size.
+    const count = exportRowCount(data);
+    if (q.format !== "xlsx" && count > PRINTABLE_ROWS) {
+      throw new AppError(
+        `That is ${count.toLocaleString("en-NG")} products, too many for a ${q.format === "pdf" ? "PDF" : "Word"} file. Download Excel instead, or choose one category.`,
+        { status: 422 },
+      );
+    }
+
     const body = q.format === "xlsx" ? await renderXlsx(data) : q.format === "pdf" ? await renderPdf(data) : await renderDocx(data);
 
-    return new NextResponse(new Uint8Array(body), {
+    // Sent as a stream: Vercel refuses ordinary replies over 4.5 MB, and a big
+    // shop's Excel file is larger than that.
+    const bytes = new Uint8Array(body);
+    const CHUNK = 256 * 1024;
+    let offset = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (offset >= bytes.length) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(bytes.subarray(offset, offset + CHUNK));
+        offset += CHUNK;
+      },
+    });
+
+    return new NextResponse(stream, {
       headers: {
         "Content-Type": TYPES[q.format],
         "Content-Disposition": `attachment; filename="${exportFileName(data, q.format)}"`,

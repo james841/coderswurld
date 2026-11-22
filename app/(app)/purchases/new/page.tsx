@@ -48,7 +48,7 @@ export default async function NewPurchasePage({
     return <NoAccess what="recording purchases" />;
   }
 
-  const [suppliers, branches, products] = await Promise.all([
+  const [suppliers, branches, products, productCount] = await Promise.all([
     prisma.supplier.findMany({
       where: { organizationId: org.id, isActive: true },
       orderBy: { name: "asc" },
@@ -59,9 +59,14 @@ export default async function NewPurchasePage({
       orderBy: [{ isMain: "desc" }, { name: "asc" }],
       select: { id: true, name: true, code: true, isMain: true },
     }),
+    // Only the products named in a prefill (from What to reorder). Everything
+    // else is searched on the server as they type: a shop can have 200,000.
     prisma.product.findMany({
-      where: { organizationId: org.id, isActive: true },
-      orderBy: { name: "asc" },
+      where: {
+        organizationId: org.id,
+        isActive: true,
+        id: { in: prefill.items.map((i) => i.productId) },
+      },
       select: {
         id: true,
         name: true,
@@ -71,6 +76,7 @@ export default async function NewPurchasePage({
         costPriceKobo: true,
       },
     }),
+    prisma.product.count({ where: { organizationId: org.id, isActive: true } }),
   ]);
 
   const backLink = (
@@ -105,7 +111,7 @@ export default async function NewPurchasePage({
   }
 
   // Nor against goods that aren't on file — a line has to point at a product.
-  if (products.length === 0) {
+  if (productCount === 0) {
     return (
       <>
         {backLink}

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 
 /**
@@ -43,35 +44,65 @@ export async function buildReorderList(opts: {
 }): Promise<ReorderRow[]> {
   const since = new Date(Date.now() - LOOKBACK_DAYS * 86_400_000);
 
-  const [products, sold] = await Promise.all([
-    prisma.product.findMany({
-      where: {
-        organizationId: opts.organizationId,
-        isActive: true,
-        ...(opts.department ? { department: opts.department } : {}),
-      },
-      select: {
-        id: true,
-        name: true,
-        sku: true,
-        unit: true,
-        minStock: true,
-        costPriceKobo: true,
-        supplier: { select: { id: true, name: true, phone: true, whatsapp: true } },
-        stockLevels: { where: { branchId: opts.branchId }, select: { quantity: true } },
-      },
-    }),
-    prisma.stockMovement.groupBy({
-      by: ["productId"],
-      where: {
-        organizationId: opts.organizationId,
-        branchId: opts.branchId,
-        type: "SALE",
-        createdAt: { gte: since },
-      },
-      _sum: { quantity: true },
-    }),
-  ]);
+  const sold = await prisma.stockMovement.groupBy({
+    by: ["productId"],
+    where: {
+      organizationId: opts.organizationId,
+      branchId: opts.branchId,
+      type: "SALE",
+      createdAt: { gte: since },
+    },
+    _sum: { quantity: true },
+  });
+
+  // Only two kinds of product can need ordering: ones that sold lately, and
+  // ones at or under their reorder level. Let the database find the second
+  // kind, so a shop with 200,000 products never loads them all here.
+  const low = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT p.id
+    FROM "Product" p
+    LEFT JOIN "StockLevel" s ON s."productId" = p.id AND s."branchId" = ${opts.branchId}
+    WHERE p."organizationId" = ${opts.organizationId}
+      AND p."isActive" = true
+      ${opts.department ? Prisma.sql`AND p.department = ${opts.department}` : Prisma.empty}
+      AND p."minStock" > 0
+      AND COALESCE(s.quantity, 0) <= p."minStock"
+  `;
+  const candidateIds = [...new Set([...sold.map((s) => s.productId), ...low.map((r) => r.id)])];
+
+  const products: {
+    id: string;
+    name: string;
+    sku: string;
+    unit: string;
+    minStock: number;
+    costPriceKobo: number;
+    supplier: { id: string; name: string; phone: string | null; whatsapp: string | null } | null;
+    stockLevels: { quantity: number }[];
+  }[] = [];
+  // In chunks, so the list of ids in one query stays a sensible size.
+  for (let i = 0; i < candidateIds.length; i += 5000) {
+    products.push(
+      ...(await prisma.product.findMany({
+        where: {
+          id: { in: candidateIds.slice(i, i + 5000) },
+          organizationId: opts.organizationId,
+          isActive: true,
+          ...(opts.department ? { department: opts.department } : {}),
+        },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          unit: true,
+          minStock: true,
+          costPriceKobo: true,
+          supplier: { select: { id: true, name: true, phone: true, whatsapp: true } },
+          stockLevels: { where: { branchId: opts.branchId }, select: { quantity: true } },
+        },
+      })),
+    );
+  }
 
   const soldMap = new Map(sold.map((s) => [s.productId, -(s._sum.quantity ?? 0)]));
   const horizon = opts.coverDays + opts.leadDays;

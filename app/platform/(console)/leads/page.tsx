@@ -1,3 +1,4 @@
+import { ConsoleHeading } from "../../ConsoleHeading";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Inbox, Search } from "lucide-react";
@@ -109,12 +110,9 @@ export default async function LeadsPage({ searchParams }: PageProps<"/platform/l
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink-950">Requests</h1>
-          <p className="mt-0.5 text-sm text-ink-600">
-            Plan requests from the landing page. Invoice them, then provision.
-          </p>
-        </div>
+        <ConsoleHeading icon={Inbox} title="Plan requests">
+          Plan requests from the landing page. Invoice them, then provision.
+        </ConsoleHeading>
 
         <form action="/platform/leads" className="flex items-center gap-2">
           {tab !== "OPEN" ? <input type="hidden" name="status" value={tab} /> : null}

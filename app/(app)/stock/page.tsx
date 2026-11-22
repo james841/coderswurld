@@ -1,6 +1,8 @@
 import { Boxes } from "lucide-react";
 import Link from "next/link";
 
+import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/db";
 import { requireTenant } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -29,7 +31,8 @@ import { StockClient, type StockRow } from "./StockClient";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Stock" };
 
-const MAX_ROWS = 5000;
+/** Rows sent to the page at once. A small shop gets all of them (instant search). */
+const MAX_ROWS = 2000;
 
 export default async function StockPage({
   searchParams,
@@ -64,31 +67,77 @@ export default async function StockPage({
     branches[0]?.id ??
     "";
 
-  const products = selectedBranchId
-    ? await prisma.product.findMany({
-        where: {
-          organizationId: org.id,
-          isActive: true,
-          // Staff tied to one counter only see that counter's stock.
-          ...(user.department ? { department: user.department } : {}),
-        },
-        orderBy: { name: "asc" },
-        take: MAX_ROWS,
-        select: {
-          id: true,
-          name: true,
-          sku: true,
-          unit: true,
-          minStock: true,
-          trackExpiry: true,
-          expiryDate: true,
-          stockLevels: {
-            where: { branchId: selectedBranchId },
-            select: { quantity: true, lastCountedAt: true },
-          },
-        },
-      })
-    : [];
+  const deptWhere = user.department ? { department: user.department } : {};
+  const select = {
+    id: true,
+    name: true,
+    sku: true,
+    unit: true,
+    minStock: true,
+    trackExpiry: true,
+    expiryDate: true,
+    stockLevels: {
+      where: { branchId: selectedBranchId },
+      select: { quantity: true, lastCountedAt: true },
+    },
+  } as const;
+
+  // Up to MAX_ROWS products: everything comes down and search is instant in
+  // the browser. A big shop (say 200,000 products) instead searches and
+  // filters on the server, and only the matching rows come down.
+  const totalActive = selectedBranchId
+    ? await prisma.product.count({ where: { organizationId: org.id, isActive: true, ...deptWhere } })
+    : 0;
+  const serverMode = totalActive > MAX_ROWS;
+  const q = typeof params.q === "string" ? params.q.trim().slice(0, 80) : "";
+
+  let serverCounts: { all: number; low: number; out: number } | null = null;
+  let products: Prisma.ProductGetPayload<{ select: typeof select }>[] = [];
+
+  if (selectedBranchId && !serverMode) {
+    products = await prisma.product.findMany({
+      where: { organizationId: org.id, isActive: true, ...deptWhere },
+      orderBy: { name: "asc" },
+      take: MAX_ROWS,
+      select,
+    });
+  } else if (selectedBranchId) {
+    const dept = user.department ? Prisma.sql`AND p.department = ${user.department}` : Prisma.empty;
+    const like = q.replace(/[\\%_]/g, (c) => "\\" + c);
+    const status =
+      initialFilter === "out"
+        ? Prisma.sql`AND COALESCE(s.quantity, 0) <= 0`
+        : initialFilter === "low"
+          ? Prisma.sql`AND s.quantity > 0 AND p."minStock" > 0 AND s.quantity <= p."minStock"`
+          : Prisma.empty;
+    const search = q
+      ? Prisma.sql`AND (p.name ILIKE ${"%" + like + "%"} OR p.sku ILIKE ${like + "%"} OR p.barcode LIKE ${like + "%"})`
+      : Prisma.empty;
+    const [ids, countRows] = await Promise.all([
+      prisma.$queryRaw<{ id: string }[]>`
+        SELECT p.id FROM "Product" p
+        LEFT JOIN "StockLevel" s ON s."productId" = p.id AND s."branchId" = ${selectedBranchId}
+        WHERE p."organizationId" = ${org.id} AND p."isActive" = true ${dept} ${status} ${search}
+        ORDER BY p.name LIMIT ${MAX_ROWS}`,
+      prisma.$queryRaw<{ all: bigint; low: bigint; out: bigint }[]>`
+        SELECT count(*) AS all,
+               count(*) FILTER (WHERE COALESCE(s.quantity, 0) <= 0) AS out,
+               count(*) FILTER (WHERE s.quantity > 0 AND p."minStock" > 0 AND s.quantity <= p."minStock") AS low
+        FROM "Product" p
+        LEFT JOIN "StockLevel" s ON s."productId" = p.id AND s."branchId" = ${selectedBranchId}
+        WHERE p."organizationId" = ${org.id} AND p."isActive" = true ${dept}`,
+    ]);
+    serverCounts = {
+      all: Number(countRows[0]?.all ?? 0),
+      low: Number(countRows[0]?.low ?? 0),
+      out: Number(countRows[0]?.out ?? 0),
+    };
+    products = await prisma.product.findMany({
+      where: { id: { in: ids.map((r) => r.id) } },
+      orderBy: { name: "asc" },
+      select,
+    });
+  }
 
   const rows: StockRow[] = products.map((p) => {
     const level = p.stockLevels[0];
@@ -145,7 +194,7 @@ export default async function StockPage({
             : "What's on hand across your products"
         }
         action={
-          canExport && rows.length > 0 ? (
+          canExport && (rows.length > 0 || serverMode) ? (
             <ExportStockButton
               departmentsEnabled={departmentsEnabled}
               branches={branches.map((b) => ({ id: b.id, name: b.name }))}
@@ -157,7 +206,7 @@ export default async function StockPage({
         }
       />
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && !serverMode ? (
         <EmptyState
           icon={Boxes}
           title="Nothing to count yet"
@@ -178,6 +227,7 @@ export default async function StockPage({
           canAdjust={hasPermission(user, PERMISSIONS.STOCK_ADJUST)}
           timezone={org.timezone}
           truncated={rows.length >= MAX_ROWS}
+          serverMode={serverMode ? { counts: serverCounts!, query: q } : null}
         />
       )}
     </>

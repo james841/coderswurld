@@ -1,6 +1,7 @@
+import { ConsoleHeading } from "../../ConsoleHeading";
 import Link from "next/link";
 import { Prisma } from "@prisma/client";
-import { Activity, Clock, Eye, Inbox, MousePointerClick, Users } from "lucide-react";
+import { Activity, Clock, Eye, Inbox, MousePointerClick, Users, BarChart3 } from "lucide-react";
 
 import { CountUp } from "@/components/motion";
 import { prisma } from "@/lib/db";
@@ -166,12 +167,9 @@ export default async function TrafficPage({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink-950">Site traffic</h1>
-          <p className="mt-0.5 text-sm text-ink-600">
-            Who visits the website, where they come from, and how many ask for a plan.
-          </p>
-        </div>
+        <ConsoleHeading icon={BarChart3} title="Site traffic">
+          Who visits the website, where they come from, and how many ask for a plan.
+        </ConsoleHeading>
         <div className="flex items-center gap-3">
           <span className="inline-flex items-center gap-2 rounded-full bg-good-50 px-3 py-1.5 text-sm font-semibold text-good-700">
             <span className="relative flex size-2">
