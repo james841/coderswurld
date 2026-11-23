@@ -233,11 +233,21 @@ export async function POST(request: Request) {
     const costTotalKobo = lines.reduce((sum, l) => sum + l.costKobo, 0);
     const profitKobo = totals.subtotalKobo - totals.orderDiscountKobo - costTotalKobo;
 
-    // soldAt is the till's clock, which may be behind when a queued sale syncs —
-    // but never ahead of the server, or it would file takings into tomorrow.
+    // When was it sold? Shop computers often have the wrong date or time (a weak
+    // clock battery, a wrong time zone), and trusting that clock filed whole
+    // days of takings under the wrong day, so "today's sales" read low or empty.
+    //  - Online sale: it is happening now, so the server's clock decides.
+    //  - Offline sale sent later: the till's time is all we have, but the till
+    //    also says what its clock read when it sent the sale. The gap between
+    //    that and the server's clock is how wrong the till's clock is, and we
+    //    correct the sale time by it. Never later than now.
     const now = new Date();
-    const claimedSoldAt = data.soldAt ? new Date(data.soldAt) : now;
-    const soldAt = claimedSoldAt.getTime() > now.getTime() ? now : claimedSoldAt;
+    let soldAt = now;
+    if (data.queued && data.soldAt) {
+      const claimed = new Date(data.soldAt).getTime();
+      const skew = data.sentAt ? now.getTime() - new Date(data.sentAt).getTime() : 0;
+      soldAt = new Date(Math.min(claimed + skew, now.getTime()));
+    }
 
     const isSplit = settlement.method === "SPLIT";
 

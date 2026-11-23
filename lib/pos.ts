@@ -297,8 +297,14 @@ export const saleSubmitSchema = z.object({
   tenderedKobo: z.number().int().nonnegative().default(0),
   customerId: z.string().min(1).nullish(),
   note: z.string().trim().max(500).nullish(),
-  /** The till's wall-clock time of the sale — set when it was made offline. */
+  /** The till's wall-clock time of the sale. Only used for offline sales. */
   soldAt: z.string().datetime().optional(),
+  /**
+   * The till's clock at the moment it sent this request. Comparing it with the
+   * server's clock shows how far wrong the till computer's clock is, so an
+   * offline sale from a computer with the wrong date still lands on the right day.
+   */
+  sentAt: z.string().datetime().optional(),
   /**
    * Made while the till was offline and sent later. The money has already
    * changed hands, so the server records it as it happened: a product deleted

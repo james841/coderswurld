@@ -215,6 +215,35 @@ export default function Till({
   /** Offline sales the server refused; kept on this device until retried. */
   const [stuck, setStuck] = useState<QueuedSale[]>([]);
   const [signInNeeded, setSignInNeeded] = useState(false);
+  /** How far this computer's clock is from the server's, when it is badly wrong. */
+  const [clockOff, setClockOff] = useState<{ here: number; real: number } | null>(null);
+
+  // Check this computer's clock against the server every 15 minutes while online.
+  // Sales are recorded at the server's time whatever this says, but a wrong
+  // clock still puts the wrong date on offline receipts, so tell the cashier.
+  useEffect(() => {
+    let stopped = false;
+    const check = async () => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) return;
+      try {
+        const sent = Date.now();
+        const res = await fetch("/api/pos/time", { cache: "no-store" });
+        if (!res.ok) return;
+        const { now } = (await res.json()) as { now: string };
+        const here = (sent + Date.now()) / 2;
+        const off = new Date(now).getTime() - here;
+        if (!stopped) setClockOff(Math.abs(off) > 5 * 60_000 ? { here, real: here + off } : null);
+      } catch {
+        /* offline: check again later */
+      }
+    };
+    void check();
+    const timer = window.setInterval(check, 15 * 60_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, []);
   /** A big catalogue's first download, page by page. */
   const [download, setDownload] = useState<{ done: number; total: number } | null>(null);
 
@@ -401,7 +430,8 @@ export default function Till({
           // Mark it as an offline sale so the server records it as it happened.
           let body = item.body;
           try {
-            body = JSON.stringify({ ...JSON.parse(item.body), queued: true });
+            // sentAt lets the server correct for a wrong computer clock.
+            body = JSON.stringify({ ...JSON.parse(item.body), queued: true, sentAt: new Date().toISOString() });
           } catch {
             /* send as stored */
           }
@@ -1176,6 +1206,18 @@ export default function Till({
                 style={{ width: `${Math.round((download.done / download.total) * 100)}%` }}
               />
             </div>
+          </div>
+        )}
+
+        {clockOff && (
+          <div className="shrink-0 border-b border-warn-200 bg-warn-50 px-3 py-2 text-sm text-warn-700 sm:px-4">
+            <p>
+              <span className="font-semibold">This computer&apos;s date or time is wrong.</span> It shows{" "}
+              {new Date(clockOff.here).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}, but the real time is{" "}
+              {new Date(clockOff.real).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}.
+              Sales are still recorded at the right time. To fix it in Windows: Settings, then Time &amp; language,
+              then Date &amp; time, and turn on <span className="font-semibold">Set time automatically</span>.
+            </p>
           </div>
         )}
 
