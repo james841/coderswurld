@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 
-import { LayoutGrid, List, Pencil } from "lucide-react";
+import { LayoutGrid, List, Pencil, Trash2 } from "lucide-react";
 
 import { Stagger, StaggerItem } from "@/components/motion";
+import { Sheet } from "@/components/ui/Sheet";
 import { formatNaira, marginPercent } from "@/lib/money";
 import { useBarcodeScanner } from "./useBarcodeScanner";
 
@@ -190,6 +191,11 @@ export function ProductsTable({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [armedId, setArmedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** "Every product matching these filters" was chosen, for this filter set only. */
+  const [allFor, setAllFor] = useState<string | null>(null);
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // The query whose result is already on screen. Starts at the server's query so
   // the mount effect below has nothing to do; bumped by every refetch trigger.
@@ -406,7 +412,59 @@ export function ProductsTable({
     setPage(1);
   }
 
-  const allSelected = rows.length > 0 && selected.size === rows.length;
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  // The filters only (not page or sort): "all matching" means these filters.
+  const filterKey = JSON.stringify([debouncedQ, categoryId, supplierId, department, stock ?? "", includeInactive]);
+  const allMatching = allFor === filterKey && allSelected;
+  const selectedCount = allMatching ? total : selected.size;
+
+  function clearSelection() {
+    setSelected(new Set());
+    setAllFor(null);
+  }
+
+  async function bulkDelete() {
+    setBulkBusy(true);
+    try {
+      const body = allMatching
+        ? {
+            all: true,
+            query: {
+              ...(debouncedQ ? { q: debouncedQ } : {}),
+              ...(categoryId ? { categoryId } : {}),
+              ...(supplierId ? { supplierId } : {}),
+              ...(department ? { department } : {}),
+              ...(stock ? { stock } : {}),
+            },
+          }
+        : { ids: [...selected] };
+      const res = await fetch("/api/products/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => null)) as { removed?: number; error?: string } | null;
+      if (!res.ok) {
+        setError(data?.error ?? "Couldn't delete those products. Try again.");
+      } else {
+        const n = data?.removed ?? 0;
+        setError(null);
+        setNotice(
+          n === 0
+            ? "Those products were already deleted."
+            : `Deleted ${n.toLocaleString()} product${n === 1 ? "" : "s"}. Tick "Show removed" to see or restore them.`,
+        );
+        clearSelection();
+        setConfirmBulk(false);
+        reload();
+        router.refresh();
+      }
+    } catch {
+      setError("Couldn't reach the server. Check your connection.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -536,24 +594,88 @@ export function ProductsTable({
         </div>
       )}
 
-      {/* Bulk actions — only offered when barcode/label printing is permitted. */}
-      {can.barcode && selected.size > 0 && (
-        <div className="card flex items-center justify-between gap-3 px-4 py-2.5">
-          <span className="text-sm text-ink-600">
-            {selected.size} selected
-          </span>
-          <div className="flex gap-2">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>
+      {notice && (
+        <div className="card flex items-center justify-between gap-3 border-good-200 bg-good-50 px-4 py-2.5 text-sm text-good-700">
+          <span>{notice}</span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setNotice(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Bulk actions for the ticked products: print labels, delete. */}
+      {(can.barcode || can.delete) && selected.size > 0 && (
+        <div className="card flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-2.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-600">
+            <span className="font-semibold text-ink-900">
+              {allMatching
+                ? `All ${total.toLocaleString()} products selected`
+                : `${selected.size.toLocaleString()} selected`}
+            </span>
+            {can.delete && allSelected && !allMatching && total > rows.length ? (
+              <button
+                type="button"
+                className="font-semibold text-navy-700 underline underline-offset-2 hover:text-navy-900"
+                onClick={() => setAllFor(filterKey)}
+              >
+                Select all {total.toLocaleString()} products{filtered ? " matching your filters" : ""}
+              </button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={clearSelection}>
               Clear
             </button>
-            <a
-              href={`/products/labels?ids=${[...selected].join(",")}`}
-              className="btn btn-primary btn-sm"
-            >
-              Print labels
-            </a>
+            {can.barcode && !allMatching ? (
+              <a href={`/products/labels?ids=${[...selected].join(",")}`} className="btn btn-outline btn-sm">
+                Print labels
+              </a>
+            ) : null}
+            {can.delete ? (
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => setConfirmBulk(true)}>
+                <Trash2 className="size-4" aria-hidden />
+                Delete {selectedCount.toLocaleString()}
+              </button>
+            ) : null}
           </div>
         </div>
+      )}
+
+      {confirmBulk && (
+        <Sheet
+          title={`Delete ${selectedCount.toLocaleString()} product${selectedCount === 1 ? "" : "s"}?`}
+          onClose={() => (bulkBusy ? undefined : setConfirmBulk(false))}
+          footer={
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={bulkBusy}
+                onClick={() => setConfirmBulk(false)}
+              >
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" disabled={bulkBusy} onClick={bulkDelete}>
+                {bulkBusy ? "Deleting..." : `Yes, delete ${selectedCount.toLocaleString()}`}
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-3 p-4 text-sm text-ink-700">
+            <p>
+              {allMatching
+                ? `Every product ${filtered ? "matching your current filters" : "in your shop"} will be removed from the till and the product list.`
+                : "The ticked products will be removed from the till and the product list."}
+            </p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>Past sales, receipts and reports keep them. Nothing in your records is lost.</li>
+              <li>Their barcodes become free to use on new products.</li>
+              <li>
+                Changed your mind? Tick <span className="font-semibold">Show removed</span> and restore any of them.
+              </li>
+            </ul>
+          </div>
+        </Sheet>
       )}
 
       {/* Table or cards: the same rows, two ways of looking at them. */}

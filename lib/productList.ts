@@ -67,14 +67,19 @@ export function canSeeCost(user: { role: string; permissions: string[] }): boole
   return user.role === "MAIN_ADMIN" || user.permissions.includes(PERMISSIONS.PRODUCTS_COST_VIEW);
 }
 
-export async function listProducts(args: {
+/**
+ * The list's filter as a Prisma `where`: search, category, supplier, department,
+ * stock health and whether removed products show. Shared by the list itself and
+ * by "delete all matching", so a bulk delete removes exactly what the owner sees.
+ */
+export async function productListWhere(args: {
   orgId: string;
   branchId: string | null;
   user: { role: string; permissions: string[] };
   query: ProductQuery;
-}): Promise<ProductListResult> {
+}): Promise<Prisma.ProductWhereInput> {
   const { orgId, branchId, user, query } = args;
-  const { q, categoryId, supplierId, stock, page, perPage, sort, includeInactive } = query;
+  const { q, categoryId, supplierId, stock, includeInactive } = query;
   // A cashier or storekeeper limited to one department never sees the other,
   // whatever filter they ask for. Everyone else may filter by choice.
   const department = (user as { department?: string | null }).department ?? query.department;
@@ -98,6 +103,18 @@ export async function listProducts(args: {
   if (stock) {
     where.id = { in: await productIdsMatchingStock(orgId, branchId, stock) };
   }
+  return where;
+}
+
+export async function listProducts(args: {
+  orgId: string;
+  branchId: string | null;
+  user: { role: string; permissions: string[] };
+  query: ProductQuery;
+}): Promise<ProductListResult> {
+  const { orgId, branchId, user, query } = args;
+  const { page, perPage, sort } = query;
+  const where = await productListWhere({ orgId, branchId, user, query });
 
   const [total, rows] = await Promise.all([
     prisma.product.count({ where }),
