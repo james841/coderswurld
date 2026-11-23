@@ -178,7 +178,10 @@ export async function PATCH(
 
     // Build the write from only the keys that were actually sent. A field left
     // out of the body is a field the caller isn't touching.
-    const data: Prisma.ProductUpdateInput = {};
+    // Unchecked (plain id columns, not relation objects): the write below is an
+    // updateMany, which can't take `connect`/`disconnect`. Using those made every
+    // save of a product with no category or supplier fail with a server error.
+    const data: Prisma.ProductUncheckedUpdateManyInput = {};
     if (parsed.name !== undefined) data.name = parsed.name;
     // SKU is NOT NULL and unique — an empty SKU means "don't change it", never
     // "blank it". Barcode, which is nullable, genuinely can be cleared.
@@ -211,14 +214,10 @@ export async function PATCH(
       data.department = parsed.department;
     }
     if (parsed.categoryId !== undefined) {
-      data.category = parsed.categoryId
-        ? { connect: { id: await requireOwnedCategory(session.org.id, parsed.categoryId) } }
-        : { disconnect: true };
+      data.categoryId = parsed.categoryId ? await requireOwnedCategory(session.org.id, parsed.categoryId) : null;
     }
     if (parsed.supplierId !== undefined) {
-      data.supplier = parsed.supplierId
-        ? { connect: { id: await requireOwnedSupplier(session.org.id, parsed.supplierId) } }
-        : { disconnect: true };
+      data.supplierId = parsed.supplierId ? await requireOwnedSupplier(session.org.id, parsed.supplierId) : null;
     }
 
     // Reactivation / deactivation can ride along on the same PATCH (the table's
